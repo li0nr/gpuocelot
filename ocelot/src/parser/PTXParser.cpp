@@ -606,6 +606,7 @@ namespace parser
 		else if( token == TOKEN_SM21 ) statement.targets.push_back( "sm_21" );
 		else if( token == TOKEN_SM30 ) statement.targets.push_back( "sm_30" );
 		else if( token == TOKEN_SM35 ) statement.targets.push_back( "sm_35" );
+		else if( token == TOKEN_SM50 ) statement.targets.push_back( "sm_50" );
 		else if( token == TOKEN_MAP_F64_TO_F32 )
 		{
 			statement.targets.push_back( "map_f64_to_f32" );
