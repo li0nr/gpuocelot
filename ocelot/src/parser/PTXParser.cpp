@@ -152,6 +152,16 @@ namespace parser
 				operand.type = instruction.type;
 			}
 		}
+		//https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-bfi
+		//https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-bfe
+		if( instruction.opcode == ir::PTXInstruction::Bfi
+			|| instruction.opcode == ir::PTXInstruction::Bfe )
+		{
+			if ( instruction.b.addressMode == ir::PTXOperand::AddressMode::Immediate)
+				instruction.b.type = ir::PTXOperand::u32;
+			if ( instruction.c.addressMode == ir::PTXOperand::AddressMode::Immediate)
+				instruction.c.type = ir::PTXOperand::u32;
+		}
 	}
 	
 	static std::string strip(const std::string& name)
