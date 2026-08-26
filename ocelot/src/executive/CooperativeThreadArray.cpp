@@ -2944,6 +2944,22 @@ static ir::PTXF64 toF64(Int value, int modifier) {
 	return d;
 }
 
+static ir::PTXU16 f32ToBF16Rn(ir::PTXF32 value) {
+	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
+	if ((bits & 0x7fffffffU) > 0x7f800000U) {
+		// NVIDIA canonical NaN
+		return 0x7fffU;
+	}
+	ir::PTXU16 upper = static_cast<ir::PTXU16>(bits >> 16);
+	ir::PTXU16 lower = static_cast<ir::PTXU16>(bits & 0xffffU);
+	if (lower > 0x8000U) {
+		return upper + 1U;
+	} else if (lower < 0x8000U) {
+		return upper;
+	}
+	return upper + (upper & 1U);
+}
+
 template< typename Float >
 static Float roundToInt(Float a, int modifier, executive::CTAContext &context,
 	const ir::PTXInstruction &instr) {
@@ -3743,6 +3759,18 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							ir::PTXF64 d = toF64(a, instr.modifier);
 							setRegAsF64(threadID, instr.d.reg, d);
+						}
+						break;
+					case ir::PTXOperand::bf16:
+						{
+							if (instr.modifier != ir::PTXInstruction::rn) {
+								throw RuntimeException(
+									"only cvt.rn.bf16.f32 is implemented",
+									context.PC, instr);
+							}
+							ir::PTXF32 a = operandAsF32(threadID, instr.a);
+							ir::PTXU16 d = f32ToBF16Rn(a);
+							setRegAsB16(threadID, instr.d.reg, d);
 						}
 						break;
 					default:

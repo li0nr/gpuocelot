@@ -359,6 +359,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".f16"			            	{ yylval->value = TOKEN_F16; return TOKEN_F16; }
 ".f64"			            	{ yylval->value = TOKEN_F64; return TOKEN_F64; }
 ".f32"			            	{ yylval->value = TOKEN_F32; return TOKEN_F32; }
+".bf16"			            	{ yylval->value = TOKEN_BF16; return TOKEN_BF16; }
 ".pred"		                    { yylval->value = TOKEN_PRED; \
                                     return TOKEN_PRED; }
 
@@ -652,4 +653,3 @@ void sstrcpy( char* destination, const char* source, unsigned int max )
 #endif
 
 /******************************************************************************/
-

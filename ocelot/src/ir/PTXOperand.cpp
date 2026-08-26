@@ -50,6 +50,7 @@ std::string ir::PTXOperand::toString( DataType type ) {
 		case b64:  return "b64";  break;
 		case f16:  return "f16";  break;
 		case f32:  return "f32";  break;
+		case bf16: return "bf16"; break;
 		case f64:  return "f64";  break;
 		case pred: return "pred"; break;
 		default: break;
@@ -150,6 +151,7 @@ bool ir::PTXOperand::isFloat( DataType type ) {
 	switch( type ) {
 		case f16: /* fall through */
 		case f32: /* fall through */
+		case bf16:/* fall through */
 		case f64: result = true;
 		default: break;
 	}
@@ -194,6 +196,7 @@ unsigned int ir::PTXOperand::bytes( DataType type ) {
 		case u16:  /* fall through */
 		case f16:  /* fall through */
 		case b16:  /* fall through */
+		case bf16:  /* fall through */
 		case s16:  return 2; break;
 		case u32:  /* fall through */
 		case b32:  /* fall through */
@@ -552,6 +555,12 @@ bool ir::PTXOperand::relaxedValid( DataType instructionType,
 				default: break;
 			}
 			break;
+		}
+		case bf16: {
+			switch( operand ) {
+				case b16: return true; break;
+				default: break;
+			}
 		}
 		case pred: {
 			return operand == pred;

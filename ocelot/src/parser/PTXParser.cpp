@@ -2467,6 +2467,7 @@ namespace parser
 			case TOKEN_PRED: return ir::PTXOperand::pred; break;
 			case TOKEN_F16:  return ir::PTXOperand::f16; break;
 			case TOKEN_F32:  return ir::PTXOperand::f32; break;
+			case TOKEN_BF16: return ir::PTXOperand::bf16; break;
 			case TOKEN_F64:  return ir::PTXOperand::f64; break;
 			default:
 			{
@@ -3012,4 +3013,3 @@ namespace parser
 }
 
 #endif
-

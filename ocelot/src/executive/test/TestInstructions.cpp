@@ -3797,7 +3797,64 @@ public:
 
 		cta->reset();
 
-		// 
+		// cvt.rn.bf16.f32
+		ins.type = PTXOperand::bf16;
+		ins.modifier = PTXInstruction::rn;
+		ins.d = reg("d", PTXOperand::b16, 0);
+		ins.a = reg("a", PTXOperand::f32, 1);
+
+		const PTXU32 input[] = {
+			0x3f800000, // exact
+			0x3f807fff, // below halfway
+			0x3f808000, // halfway, upper even
+			0x3f808001, // above halfway
+			0x3f818000, // halfway, upper odd
+			0x00000000, // +0
+			0x80000000, // -0
+			0x7f800000, // +infinity
+			0x7fc00000  // NaN
+		};
+		const PTXU16 expected[] = {
+			0x3f80,
+			0x3f80,
+			0x3f80,
+			0x3f81,
+			0x3f82,
+			0x0000,
+			0x8000,
+			0x7f80,
+			0x7fff
+		};
+		const int cases = sizeof(input) / sizeof(input[0]);
+
+		for (int i = 0; i < threadCount; ++i) {
+			cta->setRegAsU32(i, 1, input[i % cases]);
+			cta->setRegAsU16(i, 0, 0);
+		}
+
+		cta->eval_Cvt(cta->getActiveContext(), ins);
+
+		for (int i = 0; i < threadCount; ++i) {
+			PTXU16 got = cta->getRegAsU16(i, 0);
+			if (got != expected[i % cases]) {
+				status << "cvt.rn.bf16.f32 failed (thread " << i
+					<< "): expected 0x" << hex << expected[i % cases]
+					<< ", got 0x" << got << dec << "\n";
+				result = false;
+				break;
+			}
+		}
+
+		if (result) {
+			ins.modifier = PTXInstruction::rz;
+			try {
+				cta->eval_Cvt(cta->getActiveContext(), ins);
+				status << "cvt.rz.bf16.f32 should not be implemented\n";
+				result = false;
+			} catch (RuntimeException &) {
+				// Expected: only .rn is implemented.
+			}
+		}
 	
 		return result;
 	}
@@ -4443,6 +4500,7 @@ public:
 			result = (result && test_Mov());
 
 			// cvt instruction
+			result = (result && test_Cvt());
 	
 			// arithmetic instructions
 			result = (result && test_Abs());
@@ -4540,4 +4598,3 @@ int main(int argc, char **argv) {
 
 	return test.passed();
 }
-
