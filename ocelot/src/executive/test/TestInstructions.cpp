@@ -3784,6 +3784,52 @@ public:
 			}
 		}
 
+		// pack a 16-bit immediate and register into a 32-bit destination
+		if (result) {
+			ins.d = reg("f10", PTXOperand::f32, 0);
+			ins.a = PTXOperand();
+			ins.a.addressMode = PTXOperand::Register;
+			ins.a.type = PTXOperand::s16;
+			ins.a.vec = PTXOperand::v2;
+			ins.a.array.push_back(imm_uint("0", PTXOperand::s16, 0));
+			ins.a.array.push_back(reg("rs1", PTXOperand::s16, 1));
+			ins.type = PTXOperand::b32;
+
+			for (int i = 0; i < threadCount; ++i) {
+				cta->setRegAsB16(i, 1, 0x3f80);
+			}
+
+			cta->eval_Mov(cta->getActiveContext(), ins);
+
+			for (int i = 0; i < threadCount; ++i) {
+				if (cta->getRegAsB32(i, 0) != 0x3f800000) {
+					result = false;
+					status << "mov.b32 f10, {0, rs1} failed\n";
+					break;
+				}
+			}
+		}
+
+		// pack two 16-bit immediates into a 32-bit destination
+		if (result) {
+			ins.a = PTXOperand();
+			ins.a.addressMode = PTXOperand::Register;
+			ins.a.type = PTXOperand::b16;
+			ins.a.vec = PTXOperand::v2;
+			ins.a.array.push_back(imm_uint("5", PTXOperand::b16, 5));
+			ins.a.array.push_back(imm_uint("3", PTXOperand::b16, 3));
+
+			cta->eval_Mov(cta->getActiveContext(), ins);
+
+			for (int i = 0; i < threadCount; ++i) {
+				if (cta->getRegAsB32(i, 0) != 0x00030005) {
+					result = false;
+					status << "mov.b32 f10, {5, 3} failed\n";
+					break;
+				}
+			}
+		}
+
 		// from label
 	
 		return result;

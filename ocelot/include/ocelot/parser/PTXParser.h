@@ -137,6 +137,7 @@ namespace parser
 				
 				private:
 					void _setImmediateTypes();
+					void _setMovVectorImmediateTypes();
 					std::string _nameInContext( const std::string& name );
 				
 					OperandWrapper* _getOperand( const std::string& name );
@@ -236,6 +237,7 @@ namespace parser
 					void constantOperand( double value );
 					void indexedOperand( const std::string& name, 
 						YYLTYPE& location, long long int value );
+					void vectorOperand( unsigned int elements );
 					void addressableOperand( const std::string& name, 
 						long long int value, YYLTYPE& location, 
 						bool invert );
@@ -366,4 +368,3 @@ namespace parser
 }
 
 #endif
-

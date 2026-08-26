@@ -163,6 +163,46 @@ namespace parser
 				instruction.c.type = ir::PTXOperand::u32;
 		}
 	}
+
+	void PTXParser::State::_setMovVectorImmediateTypes()
+	{
+		ir::PTXInstruction& instruction = statement.instruction;
+		ir::PTXOperand& source = instruction.a;
+
+		if( instruction.opcode != ir::PTXInstruction::Mov ||
+			source.array.empty() ) return;
+
+		unsigned int totalBytes = ir::PTXOperand::bytes( instruction.type );
+		if( totalBytes % source.array.size() != 0 )
+		{
+			throw_exception( "Invalid mov vector element size.",
+				InvalidInstruction );
+		}
+
+		unsigned int elementBytes = totalBytes / source.array.size();
+		if( source.type == ir::PTXOperand::TypeSpecifier_invalid )
+		{
+			switch( elementBytes )
+			{
+				case 1: source.type = ir::PTXOperand::b8;  break;
+				case 2: source.type = ir::PTXOperand::b16; break;
+				case 4: source.type = ir::PTXOperand::b32; break;
+				case 8: source.type = ir::PTXOperand::b64; break;
+				default:
+					throw_exception( "Invalid mov vector element size.",
+						InvalidInstruction );
+			}
+		}
+
+		for( ir::PTXOperand::Array::iterator element = source.array.begin();
+			element != source.array.end(); ++element )
+		{
+			if( element->addressMode == ir::PTXOperand::Immediate )
+			{
+				element->type = source.type;
+			}
+		}
+	}
 	
 	static std::string strip(const std::string& name)
 	{
@@ -1535,7 +1575,34 @@ namespace parser
 		operandVector.push_back( OperandWrapper( operand, mode->space ) );	
 	}
 
-	
+	void PTXParser::State::vectorOperand( unsigned int elements )
+	{
+		assert( elements == 2 || elements == 4 );
+		assert( operandVector.size() >= elements );
+
+		OperandVector::iterator begin = operandVector.end() - elements;
+
+		ir::PTXOperand vector;
+		vector.addressMode = ir::PTXOperand::Register;
+		vector.type = ir::PTXOperand::TypeSpecifier_invalid;
+		vector.vec = elements == 2 ? ir::PTXOperand::v2 : ir::PTXOperand::v4;
+
+		for( OperandVector::iterator element = begin;
+			element != operandVector.end(); ++element )
+		{
+			if( vector.type == ir::PTXOperand::TypeSpecifier_invalid &&
+				element->operand.addressMode != ir::PTXOperand::Immediate )
+			{
+				vector.type = element->operand.type;
+			}
+
+			vector.array.push_back( element->operand );
+		}
+
+		operandVector.erase( begin, operandVector.end() );
+		operandVector.push_back( vector );
+	}
+
 	void PTXParser::State::addressableOperand( const std::string& name, 
 		long long int value, YYLTYPE& location, bool invert )
 	{
@@ -1855,6 +1922,7 @@ namespace parser
 		}
 
 		_setImmediateTypes();
+		_setMovVectorImmediateTypes();
 	}
 	
 	void PTXParser::State::instruction( const std::string& opcode )

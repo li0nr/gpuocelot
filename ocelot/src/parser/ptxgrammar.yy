@@ -1266,7 +1266,17 @@ movIndexedOperand : identifier '[' TOKEN_DECIMAL_CONSTANT ']'
 	state.indexedOperand( $<text>1, @1, $<value>3 );
 };
 
-movSourceOperand : arrayOperand | offsetAddressableOperand | movIndexedOperand;
+movVectorOperand : '{' operand ',' operand '}'
+{
+	state.vectorOperand(2);
+};
+
+movVectorOperand : '{' operand ',' operand ',' operand ',' operand '}'
+{
+	state.vectorOperand(4);
+};
+
+movSourceOperand : operand | offsetAddressableOperand | movIndexedOperand | movVectorOperand;
 
 mov : OPCODE_MOV dataType arrayOperand ',' movSourceOperand ';'
 {
