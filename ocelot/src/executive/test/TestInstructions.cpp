@@ -3902,6 +3902,22 @@ public:
 				// Expected: only .rn is implemented.
 			}
 		}
+
+		if (result) {
+			// cvt.rn.f16.f32
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+
+			cta->setRegAsF32(0, 1, 2049.0f);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsU16(0, 0) != 0x6800) {
+				status << "cvt.rn.f16.f32 failed\n";
+				result = false;
+			}
+		}
 	
 		return result;
 	}

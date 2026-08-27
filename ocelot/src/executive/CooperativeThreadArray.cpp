@@ -382,7 +382,7 @@ static ir::PTXU16 ftzF16(int modifier, ir::PTXU16 bits)
 }
 
 static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
-	_Float16 half;
+	ir::PTXF16 half;
 	std::memcpy(&half, &bits, sizeof(half));
 	return static_cast<ir::PTXF32>(half);
 }
@@ -2960,6 +2960,24 @@ static ir::PTXF64 toF64(Int value, int modifier) {
 	return d;
 }
 
+static ir::PTXU16 toF16(ir::PTXF32 value, int modifier) {
+	int mode = hydrazine::fegetround();
+	if (modifier & ir::PTXInstruction::rn) {
+		hydrazine::fesetround(FE_TONEAREST);
+	} else if (modifier & ir::PTXInstruction::rz) {
+		hydrazine::fesetround(FE_TOWARDZERO);
+	} else if (modifier & ir::PTXInstruction::rm) {
+		hydrazine::fesetround(FE_DOWNWARD);
+	} else if (modifier & ir::PTXInstruction::rp) {
+		hydrazine::fesetround(FE_UPWARD);
+	}
+	ir::PTXF16 half = value;
+	hydrazine::fesetround(mode);
+	ir::PTXU16 bits;
+	std::memcpy(&bits, &half, sizeof(bits));
+	return bits;
+}
+
 static ir::PTXU16 f32ToBF16Rn(ir::PTXF32 value) {
 	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
 	if ((bits & 0x7fffffffU) > 0x7f800000U) {
@@ -3602,6 +3620,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::f32:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsF32(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
