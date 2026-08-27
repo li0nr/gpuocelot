@@ -3964,6 +3964,70 @@ public:
 				result = false;
 			}
 		}
+
+		if (result) {
+			// cvt.f32.f16
+			ins.type = PTXOperand::f32;
+			ins.modifier = 0;
+			ins.d = reg("d", PTXOperand::f32, 0);
+			ins.a = reg("a", PTXOperand::f16, 1);
+
+			cta->setRegAsU16(0, 1, 0x3c00);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsU32(0, 0) != 0x3f800000) {
+				status << "cvt.f32.f16 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// cvt.rzi.s32.f16
+			ins.type = PTXOperand::s32;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::s32, 0);
+			ins.a = reg("a", PTXOperand::f16, 1);
+
+			cta->setRegAsU16(0, 1, 0x3e00);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsS32(0, 0) != 1) {
+				status << "cvt.rzi.s32.f16 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// cvt.rn.f16.s64
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::s64, 1);
+
+			cta->setRegAsS64(0, 1, 2049);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsU16(0, 0) != 0x6800) {
+				status << "cvt.rn.f16.s64 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// cvt.rn.f16.f64
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::f64, 1);
+
+			cta->setRegAsF64(0, 1, 1.0);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsU16(0, 0) != 0x3c00) {
+				status << "cvt.rn.f16.f64 failed\n";
+				result = false;
+			}
+		}
 	
 		return result;
 	}

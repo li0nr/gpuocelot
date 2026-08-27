@@ -2965,7 +2965,8 @@ static ir::PTXF64 toF64(Int value, int modifier) {
 	return d;
 }
 
-static ir::PTXU16 toF16(ir::PTXF32 value, int modifier) {
+template< typename Source >
+static ir::PTXU16 toF16(Source value, int modifier) {
 	int mode = hydrazine::fegetround();
 	if (modifier & ir::PTXInstruction::rn) {
 		hydrazine::fesetround(FE_TONEAREST);
@@ -3038,6 +3039,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::u8:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsB8(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8: // fall through
@@ -3088,6 +3096,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::s8:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsS8(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::s8: // fall through
 					case ir::PTXOperand::s16: // fall through
 					case ir::PTXOperand::s32: // fall through
@@ -3139,6 +3154,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::u16:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsB16(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
@@ -3206,6 +3228,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			{
 				// s16 to one of the following
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsS16(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::s8:
 						{
 							ir::PTXS16 a = operandAsS16(threadID, instr.a);
@@ -3272,6 +3301,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::u32:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsU32(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
@@ -3353,6 +3389,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::s32:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsS32(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
@@ -3433,6 +3476,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::s64:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsS64(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8: // fall through
@@ -3529,6 +3579,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::u64:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsU64(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
@@ -3622,21 +3679,23 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				}
 			}
 			break;
+			case ir::PTXOperand::f16: // fall through
 			case ir::PTXOperand::f32:
 			{
+				ir::PTXF32 a = sourceType == ir::PTXOperand::f16
+					? f16ToF32(operandAsU16(threadID, instr.a))
+					: operandAsF32(threadID, instr.a);
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
 							setRegAsB16(threadID, instr.d.reg,
-								toF16(operandAsF32(threadID, instr.a),
-								instr.modifier));
+								toF16(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3656,7 +3715,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b16: // fall through
 					case ir::PTXOperand::u16:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3676,7 +3734,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b32: // fall through
 					case ir::PTXOperand::u32:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3696,7 +3753,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3715,7 +3771,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3734,7 +3789,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3753,7 +3807,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s32:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3772,7 +3825,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s64:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							if (a != a) a = 0.0f;
 							ir::PTXF32 fd = roundToInt(a, instr.modifier,
 								context, instr);
@@ -3791,8 +3843,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::f32:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
-
 							a = roundToInt(a, instr.modifier, context,
 								instr);
 
@@ -3802,7 +3852,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::f64:
 						{
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							ir::PTXF64 d = toF64(a, instr.modifier);
 							setRegAsF64(threadID, instr.d.reg, d);
 						}
@@ -3814,7 +3863,6 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 									"only cvt.rn.bf16.f32 is implemented",
 									context.PC, instr);
 							}
-							ir::PTXF32 a = operandAsF32(threadID, instr.a);
 							ir::PTXU16 d = f32ToBF16Rn(a);
 							setRegAsB16(threadID, instr.d.reg, d);
 						}
@@ -3829,6 +3877,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::bf16:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(bf16ToF32(operandAsU16(threadID,
+								instr.a)), instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::f32:
 						{
 							setRegAsF32(threadID, instr.d.reg,
@@ -3845,6 +3900,13 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			case ir::PTXOperand::f64:
 			{
 				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						{
+							setRegAsB16(threadID, instr.d.reg,
+								toF16(operandAsF64(threadID, instr.a),
+								instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
