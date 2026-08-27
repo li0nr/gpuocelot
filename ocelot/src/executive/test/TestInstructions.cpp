@@ -3904,6 +3904,22 @@ public:
 		}
 
 		if (result) {
+			// cvt.f32.bf16
+			ins.type = PTXOperand::f32;
+			ins.modifier = 0;
+			ins.d = reg("d", PTXOperand::f32, 0);
+			ins.a = reg("a", PTXOperand::bf16, 1);
+
+			cta->setRegAsU16(0, 1, 0xc020);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+
+			if (cta->getRegAsU32(0, 0) != 0xc0200000) {
+				status << "cvt.f32.bf16 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
 			// cvt.rn.f16.f32
 			ins.type = PTXOperand::f16;
 			ins.modifier = PTXInstruction::rn;

@@ -3821,6 +3821,24 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				}
 			}
 			break;
+			case ir::PTXOperand::bf16:
+			{
+				switch (instr.type) {
+					case ir::PTXOperand::f32:
+						{
+							ir::PTXU32 bits = static_cast<ir::PTXU32>(
+								operandAsU16(threadID, instr.a)) << 16;
+							setRegAsF32(threadID, instr.d.reg,
+								hydrazine::bit_cast<ir::PTXF32>(bits));
+						}
+						break;
+					default:
+						throw RuntimeException("conversion not implemented",
+							context.PC, instr);
+						break;
+				}
+			}
+			break;
 			case ir::PTXOperand::f64:
 			{
 				switch (instr.type) {
