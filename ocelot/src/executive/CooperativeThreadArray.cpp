@@ -387,6 +387,11 @@ static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
 	return static_cast<ir::PTXF32>(half);
 }
 
+static ir::PTXF32 bf16ToF32(ir::PTXU16 bits) {
+	return hydrazine::bit_cast<ir::PTXF32>(
+		static_cast<ir::PTXU32>(bits) << 16);
+}
+
 
 void executive::CooperativeThreadArray::trace() {
 	if (traceEvents) {
@@ -3826,10 +3831,8 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f32:
 						{
-							ir::PTXU32 bits = static_cast<ir::PTXU32>(
-								operandAsU16(threadID, instr.a)) << 16;
 							setRegAsF32(threadID, instr.d.reg,
-								hydrazine::bit_cast<ir::PTXF32>(bits));
+								bf16ToF32(operandAsU16(threadID, instr.a)));
 						}
 						break;
 					default:
@@ -4511,6 +4514,17 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 				b = operandAsF64(tid, instr.b), c = operandAsF64(tid, instr.c);
 			d = a * b + c;
 			setRegAsF64(tid, instr.d.reg, d);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::bf16) {
+		for (int tid = 0; tid < threadCount; tid++) {
+			if (!context.predicated(tid, instr)) continue;
+
+			ir::PTXF32 a = bf16ToF32(operandAsU16(tid, instr.a));
+			ir::PTXF32 b = bf16ToF32(operandAsU16(tid, instr.b));
+			ir::PTXF32 c = bf16ToF32(operandAsU16(tid, instr.c));
+			ir::PTXU16 d = f32ToBF16Rn(std::fma(a, b, c));
+			setRegAsB16(tid, instr.d.reg, d);
 		}
 	}
 	else {

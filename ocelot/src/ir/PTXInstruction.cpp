@@ -945,7 +945,8 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Fma: {
-			if (!(type == ir::PTXOperand::f32 || type == ir::PTXOperand::f64)) {
+			if (!(type == ir::PTXOperand::f32 || type == ir::PTXOperand::f64
+				|| type == ir::PTXOperand::bf16)) {
 				return "invalid instruction type " + PTXOperand::toString( type );
 			}
 			if( !PTXOperand::valid( type, d.type )  ) {

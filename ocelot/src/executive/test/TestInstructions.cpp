@@ -2687,6 +2687,36 @@ public:
 		return result;
 	}
 
+	bool test_Bf16Fma() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Fma;
+		ins.type = PTXOperand::bf16;
+		ins.modifier = PTXInstruction::rn;
+		ins.a = reg("r1", PTXOperand::b16, 0);
+		ins.b = reg("r2", PTXOperand::b16, 1);
+		ins.c = reg("r4", PTXOperand::b16, 3);
+		ins.d = reg("r3", PTXOperand::b16, 2);
+
+		// 1.0 * 1.0078125 + 0.00390625 is halfway between
+		// 0x3f81 and 0x3f82, so round to the even result 0x3f82.
+		for (int i = 0; i < threadCount; i++) {
+			cta->setRegAsU16(i, 0, 0x3f80);
+			cta->setRegAsU16(i, 1, 0x3f81);
+			cta->setRegAsU16(i, 3, 0x3b80);
+			cta->setRegAsU16(i, 2, 0);
+		}
+
+		cta->eval_Fma(cta->getActiveContext(), ins);
+		for (int i = 0; i < threadCount; i++) {
+			if (cta->getRegAsU16(i, 2) != 0x3f82) {
+				status << "fma.rn.bf16 incorrect [" << i << "]\n";
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	bool test_Lg2() {
 		bool result = true;
 
@@ -4666,6 +4696,7 @@ public:
 			result = (result && test_Cos());
 			result = (result && test_Sin());
 			result = (result && test_Ex2());
+			result = (result && test_Bf16Fma());
 			result = (result && test_Lg2());
 			result = (result && test_Sqrt());
 			result = (result && test_Rsqrt());

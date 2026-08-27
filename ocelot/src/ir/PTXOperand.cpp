@@ -238,6 +238,7 @@ bool ir::PTXOperand::valid( DataType destination, DataType source ) {
 				case s16: /* fall through */
 				case u16: /* fall through */
 				case f16: /* fall through */
+				case bf16: /* fall through */
 				case b16: return true; break;
 				default: break;
 			}
@@ -346,6 +347,10 @@ bool ir::PTXOperand::valid( DataType destination, DataType source ) {
 				case f16: return true; break;
 				default: break;
 			}
+			break;
+		}
+		case bf16: {
+			return source == b16;
 			break;
 		}
 		case pred: {
@@ -873,5 +878,4 @@ bool ir::PTXOperand::isRegister() const {
 bool ir::PTXOperand::isVector() const {
 	return isRegister() && vec != v1;
 }
-
 
