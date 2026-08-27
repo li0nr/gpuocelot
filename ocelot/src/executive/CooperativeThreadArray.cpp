@@ -372,6 +372,22 @@ static ir::PTXF32 ftz(int modifier, ir::PTXF32 f) {
 	return f;
 }
 
+static ir::PTXU16 ftzF16(int modifier, ir::PTXU16 bits)
+{
+	const bool subnormal = (bits & 0x7c00u) == 0 && (bits & 0x03ffu) != 0;
+	if ((modifier & ir::PTXInstruction::ftz) && subnormal) {
+		return bits & 0x8000u; // preserve sign: +0 or -0
+	}
+	return bits;
+}
+
+static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
+	_Float16 half;
+	std::memcpy(&half, &bits, sizeof(half));
+	return static_cast<ir::PTXF32>(half);
+}
+
+
 void executive::CooperativeThreadArray::trace() {
 	if (traceEvents) {
 		currentEvent.contextStackSize =
@@ -7160,112 +7176,44 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 		}
 		break;
 
-		// single-precision float
+		// floating-point types [widened to double after type-specific FTZ]
+		case ir::PTXOperand::f16:
 		case ir::PTXOperand::f32:
-		{
-			for (int threadID = 0; threadID < threadCount; threadID++) {
-				if (!context.predicated(threadID, instr)) continue;
-
-				ir::PTXF32 a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
-					b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
-				bool c = true;	// read operator somehow
-				bool t = false;
-
-				if (instr.c.addressMode == ir::PTXOperand::Register) {
-					c = operandAsPredicate(threadID, instr.c);
-				}
-
-				// any branch predictor worth its salt will get this wrong twice or less
-				switch (instr.comparisonOperator) {
-					case ir::PTXInstruction::Equ:
-					case ir::PTXInstruction::Eq:
-						t = (a == b);
-						break;
-					case ir::PTXInstruction::Neu:
-					case ir::PTXInstruction::Ne:
-						t = (a != b);
-						break;
-
-					case ir::PTXInstruction::Ltu:
-					case ir::PTXInstruction::Lo:	// fall through
-					case ir::PTXInstruction::Lt:
-						t = (a < b);
-						break;
-
-					case ir::PTXInstruction::Leu:
-					case ir::PTXInstruction::Ls:	// fall through
-					case ir::PTXInstruction::Le:
-						t = (a <= b);
-						break;
-
-					case ir::PTXInstruction::Gtu:
-					case ir::PTXInstruction::Hi:	// fall through
-					case ir::PTXInstruction::Gt:
-						t = (a > b);
-						break;
-
-					case ir::PTXInstruction::Geu:
-					case ir::PTXInstruction::Hs:	// fall through
-					case ir::PTXInstruction::Ge:
-						t = (a >= b);
-						break;
-
-					case ir::PTXInstruction::Num:
-						t = !hydrazine::isnan(a) && !hydrazine::isnan(b);
-						break;
-					case ir::PTXInstruction::Nan:
-						t = hydrazine::isnan(a) || hydrazine::isnan(b);
-						break;
-
-					default:
-						throw RuntimeException("invalid comparison operator "
-							"for unsigned int type", context.PC, instr);
-				}
-
-				// now apply the bool op
-				bool p = false, q = false;
-				switch (instr.booleanOperator) {
-					case ir::PTXInstruction::BoolAnd:
-						p = (t && c);
-						q = (!t && c);
-						break;
-					case ir::PTXInstruction::BoolOr:
-						p = (t || c);
-						q = (!t || c);
-						break;
-					case ir::PTXInstruction::BoolXor:
-						p = (t && !c) || (!t && c);
-						q = (!t && !c) || (t && c);
-						break;
-					default:
-						p = t;
-						q = !t;
-						break;
-				}
-
-				reportE(REPORT_SETP, "    " << instr.a.identifier << " = " << a
-					<< ", " << instr.b.identifier << " = " << b
-					<< " condition = " << t << ", input = " << c << " "
-					<< instr.d.identifier << " = " << p << ", q = " << q );
-
-				setRegAsPredicate(threadID, instr.d.reg, p);
-				if (instr.pq.addressMode != ir::PTXOperand::Invalid) {
-					setRegAsPredicate(threadID, instr.pq.reg, q);
-				}
-			}
-		}
-		break;
-
-		// double-precision float
 		case ir::PTXOperand::f64:
 		{
 			for (int threadID = 0; threadID < threadCount; threadID++) {
 				if (!context.predicated(threadID, instr)) continue;
 
-				ir::PTXF64 a = operandAsF64(threadID, instr.a),
-					b = operandAsF64(threadID, instr.b);
-				bool c = true;
+				ir::PTXF64 a;
+				ir::PTXF64 b;
+
+				switch (instr.type) {
+					case ir::PTXOperand::f16:
+						a = f16ToF32(ftzF16(instr.modifier, operandAsU16(threadID, instr.a)));
+						b = f16ToF32(ftzF16(instr.modifier, operandAsU16(threadID, instr.b)));
+						break;
+					case ir::PTXOperand::f32:
+						a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
+						b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
+						break;
+					default:
+						a = operandAsF64(threadID, instr.a);
+						b = operandAsF64(threadID, instr.b);
+						break;
+				}
+
+				bool c = true;	// read operator somehow
 				bool t = false;
+
+				const bool hasNaN = hydrazine::isnan(a) || hydrazine::isnan(b);
+
+				const bool unorderedOp =
+						instr.comparisonOperator == ir::PTXInstruction::Equ ||
+						instr.comparisonOperator == ir::PTXInstruction::Neu ||
+						instr.comparisonOperator == ir::PTXInstruction::Ltu ||
+						instr.comparisonOperator == ir::PTXInstruction::Leu ||
+						instr.comparisonOperator == ir::PTXInstruction::Gtu ||
+						instr.comparisonOperator == ir::PTXInstruction::Geu;
 
 				if (instr.c.addressMode == ir::PTXOperand::Register) {
 					c = operandAsPredicate(threadID, instr.c);
@@ -7273,39 +7221,37 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 
 				// any branch predictor worth its salt will get this wrong twice or less
 				switch (instr.comparisonOperator) {
-
 					case ir::PTXInstruction::Equ:
 					case ir::PTXInstruction::Eq:
-						t = (a == b);
+						t = hasNaN ? unorderedOp :  (a == b);
 						break;
-
 					case ir::PTXInstruction::Neu:
 					case ir::PTXInstruction::Ne:
-						t = (a != b);
+						t = hasNaN ? unorderedOp :  (a != b);
 						break;
 
 					case ir::PTXInstruction::Ltu:
 					case ir::PTXInstruction::Lo:	// fall through
 					case ir::PTXInstruction::Lt:
-						t = (a < b);
+						t = hasNaN ? unorderedOp :  (a < b);
 						break;
 
 					case ir::PTXInstruction::Leu:
 					case ir::PTXInstruction::Ls:	// fall through
 					case ir::PTXInstruction::Le:
-						t = (a <= b);
+						t = hasNaN ? unorderedOp :  (a <= b);
 						break;
 
 					case ir::PTXInstruction::Gtu:
 					case ir::PTXInstruction::Hi:	// fall through
 					case ir::PTXInstruction::Gt:
-						t = (a > b);
+						t = hasNaN ? unorderedOp :  (a > b);
 						break;
 
 					case ir::PTXInstruction::Geu:
 					case ir::PTXInstruction::Hs:	// fall through
 					case ir::PTXInstruction::Ge:
-						t = (a >= b);
+						t = hasNaN ? unorderedOp :  (a >= b);
 						break;
 
 					case ir::PTXInstruction::Num:
@@ -7319,7 +7265,6 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 						throw RuntimeException("invalid comparison operator "
 							"for unsigned int type", context.PC, instr);
 				}
-
 
 				// now apply the bool op
 				bool p = false, q = false;

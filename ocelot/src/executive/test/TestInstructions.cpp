@@ -19,6 +19,7 @@
 #include <ocelot/executive/CooperativeThreadArray.h>
 
 #include <cmath>
+#include <limits>
 
 using namespace std;
 using namespace ir;
@@ -4219,6 +4220,65 @@ public:
 					result = false;
 					break;
 				}
+			}
+		}
+
+		if (result) {
+			// Unordered floating-point comparisons are true when an input is NaN.
+			ins = PTXInstruction();
+			ins.opcode = PTXInstruction::SetP;
+			ins.type = PTXOperand::f64;
+			ins.d = reg("p", PTXOperand::pred, 3);
+			ins.pq = reg("q", PTXOperand::pred, 4);
+			ins.a = reg("a", PTXOperand::f64, 1);
+			ins.b = reg("b", PTXOperand::f64, 2);
+			ins.comparisonOperator = PTXInstruction::Equ;
+
+			cta->setRegAsF64(0, 1,
+				std::numeric_limits<PTXF64>::quiet_NaN());
+			cta->setRegAsF64(0, 2, 1.0);
+			cta->eval_SetP(cta->getActiveContext(), ins);
+
+			if (!cta->getRegAsPredicate(0, 3) ||
+				cta->getRegAsPredicate(0, 4)) {
+				status << "[f64 Equ NaN test] " << ins.toString()
+					<< " failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Half inputs are widened exactly, with FTZ applied before widening.
+			ins = PTXInstruction();
+			ins.opcode = PTXInstruction::SetP;
+			ins.type = PTXOperand::f16;
+			ins.d = reg("p", PTXOperand::pred, 3);
+			ins.pq = reg("q", PTXOperand::pred, 4);
+			ins.a = reg("a", PTXOperand::b16, 1);
+			ins.b = reg("b", PTXOperand::b16, 2);
+			ins.comparisonOperator = PTXInstruction::Lt;
+
+			cta->setRegAsU16(0, 1, 0x3c00); // 1.0
+			cta->setRegAsU16(0, 2, 0x4000); // 2.0
+			cta->eval_SetP(cta->getActiveContext(), ins);
+			const bool normal = cta->getRegAsPredicate(0, 3) &&
+				!cta->getRegAsPredicate(0, 4);
+
+			ins.comparisonOperator = PTXInstruction::Eq;
+			cta->setRegAsU16(0, 1, 0x0001); // minimum half subnormal
+			cta->setRegAsU16(0, 2, 0x0000);
+			cta->eval_SetP(cta->getActiveContext(), ins);
+			const bool preserved = !cta->getRegAsPredicate(0, 3) &&
+				cta->getRegAsPredicate(0, 4);
+
+			ins.modifier = PTXInstruction::ftz;
+			cta->eval_SetP(cta->getActiveContext(), ins);
+			const bool flushed = cta->getRegAsPredicate(0, 3) &&
+				!cta->getRegAsPredicate(0, 4);
+
+			if (!normal || !preserved || !flushed) {
+				status << "[f16 widening/FTZ test] failed\n";
+				result = false;
 			}
 		}
 

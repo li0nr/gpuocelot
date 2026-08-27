@@ -1615,7 +1615,7 @@ std::string ir::PTXInstruction::valid() const {
 				&& type != PTXOperand::u32 && type != PTXOperand::u64
 				&& type != PTXOperand::b16 && type != PTXOperand::b32 
 				&& type != PTXOperand::b64 && type != PTXOperand::f32
-				&& type != PTXOperand::f64 ) {
+				&& type != PTXOperand::f64 && type != PTXOperand::f16 ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
