@@ -1580,10 +1580,10 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
-			if( d.type != PTXOperand::s32 && d.type != PTXOperand::f32 
-				&& d.type != PTXOperand::u32 ) {
+			if( d.type != PTXOperand::s32 && d.type != PTXOperand::f32
+				&& d.type != PTXOperand::u32 && d.type != PTXOperand::b32 ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
-					+ " invalid (must be u32, s32, or f32)";
+					+ " invalid (must be b32, u32, s32, or f32)";
 			}
 			if( c.type != PTXOperand::pred && 
 				c.addressMode != PTXOperand::Invalid ) {
