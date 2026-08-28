@@ -4130,6 +4130,35 @@ public:
 			}
 		}
 
+		if (result) {
+			// set.eq.f16.f16.and
+			ins = PTXInstruction();
+			ins.opcode = PTXInstruction::Set;
+			ins.type = PTXOperand::f16;
+			ins.d = reg("d", PTXOperand::b16, 3);
+			ins.a = reg("a", PTXOperand::f16, 1);
+			ins.b = reg("b", PTXOperand::f16, 2);
+			ins.c = reg("c", PTXOperand::pred, 0);
+			ins.comparisonOperator = PTXInstruction::Eq;
+			ins.booleanOperator = PTXInstruction::BoolAnd;
+
+			cta->setRegAsU16(0, 1, 0x3c00); // 1.0
+			cta->setRegAsU16(0, 2, 0x3c00); // 1.0
+			cta->setRegAsPredicate(0, 0, true);
+			cta->eval_Set(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 3) != 0x3c00) {
+				status << "[set.eq.f16.f16.and test] failed\n";
+				result = false;
+			}
+
+			cta->setRegAsPredicate(0, 0, false);
+			cta->eval_Set(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 3) != 0x0000) {
+				status << "[set.eq.f16.f16.and false predicate test] failed\n";
+				result = false;
+			}
+		}
+
 		return result;
 	}
 

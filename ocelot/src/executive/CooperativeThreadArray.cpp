@@ -7642,14 +7642,23 @@ void executive::CooperativeThreadArray::eval_Set(CTAContext &context,
 		}
 		break;
 
-		// single-precision float
+		// floating-point types, with f16 widened before comparison
+		case ir::PTXOperand::f16:
 		case ir::PTXOperand::f32:
 		{
 			for (int threadID = 0; threadID < threadCount; threadID++) {
 				if (!context.predicated(threadID, instr)) continue;
 
-				ir::PTXF32 a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
+				ir::PTXF32 a, b;
+				if (instr.a.type == ir::PTXOperand::f16) {
+					a = f16ToF32(ftzF16(instr.modifier,
+						operandAsU16(threadID, instr.a)));
+					b = f16ToF32(ftzF16(instr.modifier,
+						operandAsU16(threadID, instr.b)));
+				} else {
+					a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
 					b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
+				}
 				bool c = true;	// read operator somehow
 				bool t = false;
 
@@ -7734,12 +7743,15 @@ void executive::CooperativeThreadArray::eval_Set(CTAContext &context,
 						break;
 				}
 
-				switch (instr.type) {
-					case ir::PTXOperand::s32:
-					case ir::PTXOperand::u32:
-						setRegAsU32(threadID, instr.d.reg, (t ? 0xFFFFFFFF : 0x00));
-						break;
-					case ir::PTXOperand::f32:
+					switch (instr.type) {
+						case ir::PTXOperand::s32:
+						case ir::PTXOperand::u32:
+							setRegAsU32(threadID, instr.d.reg, (t ? 0xFFFFFFFF : 0x00));
+							break;
+						case ir::PTXOperand::f16:
+							setRegAsB16(threadID, instr.d.reg, t ? 0x3c00 : 0x0000);
+							break;
+						case ir::PTXOperand::f32:
 						setRegAsF32(threadID, instr.d.reg, (t ? 1.0f : 0.0f));
 						break;
 					default:

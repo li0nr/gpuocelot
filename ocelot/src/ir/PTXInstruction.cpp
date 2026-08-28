@@ -1577,14 +1577,15 @@ std::string ir::PTXInstruction::valid() const {
 				&& type != PTXOperand::u32 && type != PTXOperand::u64
 				&& type != PTXOperand::b16 && type != PTXOperand::b32 
 				&& type != PTXOperand::b64 && type != PTXOperand::f32
-				&& type != PTXOperand::f64 ) {
+				&& type != PTXOperand::f64 && type != PTXOperand::f16 ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
 			if( d.type != PTXOperand::s32 && d.type != PTXOperand::f32
-				&& d.type != PTXOperand::u32 && d.type != PTXOperand::b32 ) {
+				&& d.type != PTXOperand::u32 && d.type != PTXOperand::b32
+				&& d.type != PTXOperand::b16 && d.type != PTXOperand::f16 ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
-					+ " invalid (must be b32, u32, s32, or f32)";
+					+ " invalid (must be b16, f16, b32, u32, s32, or f32)";
 			}
 			if( c.type != PTXOperand::pred && 
 				c.addressMode != PTXOperand::Invalid ) {
