@@ -324,6 +324,37 @@ public:
 
 		PTXInstruction ins;
 
+		// f16
+		//
+		if (result) {
+			ins.opcode = PTXInstruction::Add;
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.b = reg("r2", PTXOperand::b16, 1);
+			ins.d = reg("r3", PTXOperand::b16, 2);
+
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU16(i, 0, 0x3e00); // 1.5
+				cta->setRegAsU16(i, 1, 0x4000); // 2.0
+				cta->setRegAsU16(i, 2, 0);
+			}
+			if (!ins.valid().empty()) {
+				result = false;
+				status << "add.f16 rejected\n";
+			}
+			else {
+				cta->eval_Add(cta->getActiveContext(), ins);
+				for (int i = 0; i < threadCount; i++) {
+					if (cta->getRegAsU16(i, 2) != 0x4300) { // 3.5
+						result = false;
+						status << "add.f16 incorrect\n";
+						break;
+					}
+				}
+			}
+		}
+
 		// u16
 		//
 		if (result) {
@@ -597,6 +628,36 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Sub;
+
+		// f16
+		//
+		if (result) {
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.b = reg("r2", PTXOperand::b16, 1);
+			ins.d = reg("r3", PTXOperand::b16, 2);
+
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU16(i, 0, 0x4000); // 2.0
+				cta->setRegAsU16(i, 1, 0x3e00); // 1.5
+				cta->setRegAsU16(i, 2, 0);
+			}
+			if (!ins.valid().empty()) {
+				result = false;
+				status << "sub.f16 rejected\n";
+			}
+			else {
+				cta->eval_Sub(cta->getActiveContext(), ins);
+				for (int i = 0; i < threadCount; i++) {
+					if (cta->getRegAsU16(i, 2) != 0x3800) { // 0.5
+						result = false;
+						status << "sub.f16 incorrect\n";
+						break;
+					}
+				}
+			}
+		}
 
 		// u16
 		//
@@ -1451,6 +1512,34 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Neg;
+
+		// f16
+		//
+		if (result) {
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.d = reg("r3", PTXOperand::b16, 2);
+
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU16(i, 0, 0x3e00); // 1.5
+				cta->setRegAsU16(i, 2, 0);
+			}
+			if (!ins.valid().empty()) {
+				result = false;
+				status << "neg.f16 rejected\n";
+			}
+			else {
+				cta->eval_Neg(cta->getActiveContext(), ins);
+				for (int i = 0; i < threadCount; i++) {
+					if (cta->getRegAsU16(i, 2) != 0xbe00) { // -1.5
+						result = false;
+						status << "neg.f16 incorrect\n";
+						break;
+					}
+				}
+			}
+		}
 
 		// s16
 		//
