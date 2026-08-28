@@ -6127,7 +6127,19 @@ void executive::CooperativeThreadArray::eval_Mul24(CTAContext &context, const ir
 */
 void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f32) {
+	if (instr.type == ir::PTXOperand::f16) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+
+			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(threadID, instr.a)));
+			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(threadID, instr.b)));
+			ir::PTXU16 d = toF16(a * b, instr.modifier);
+			setRegAsB16(threadID, instr.d.reg, ftzF16(instr.modifier, d));
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f32) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 

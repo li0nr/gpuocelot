@@ -2151,6 +2151,39 @@ public:
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Mul;
 
+		// f16
+		//
+		if (result) {
+			ins.type = PTXOperand::f16;
+			ins.modifier = 0;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.b = reg("r2", PTXOperand::b16, 1);
+			ins.c = reg("r3", PTXOperand::b16, 2);
+			ins.d = reg("r4", PTXOperand::b16, 3);
+
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU16(i, 0, 0x3e00); // 1.5
+				cta->setRegAsU16(i, 1, 0x4000); // 2.0
+				cta->setRegAsU16(i, 2, 0);
+				cta->setRegAsU16(i, 3, 0);
+			}
+			std::string error = ins.valid();
+			if (!error.empty()) {
+				result = false;
+				status << "mul.f16 rejected: " << error << "\n";
+			}
+			else {
+				cta->eval_Mul(cta->getActiveContext(), ins);
+				for (int i = 0; i < threadCount; i++) {
+					if (cta->getRegAsU16(i, 3) != 0x4200) { // 3.0
+						result = false;
+						status << "mul.f16 incorrect\n";
+						break;
+					}
+				}
+			}
+		}
+
 		// u16
 		//
 		if (result) {
