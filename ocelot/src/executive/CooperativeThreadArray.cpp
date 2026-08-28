@@ -4578,6 +4578,20 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 			setRegAsF64(tid, instr.d.reg, d);
 		}
 	}
+	else if (instr.type == ir::PTXOperand::f16) {
+		for (int tid = 0; tid < threadCount; tid++) {
+			if (!context.predicated(tid, instr)) continue;
+
+			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(tid, instr.a)));
+			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(tid, instr.b)));
+			ir::PTXF32 c = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(tid, instr.c)));
+			setRegAsB16(tid, instr.d.reg,
+				toF16(std::fma(a, b, c), instr.modifier));
+		}
+	}
 	else if (instr.type == ir::PTXOperand::bf16) {
 		for (int tid = 0; tid < threadCount; tid++) {
 			if (!context.predicated(tid, instr)) continue;
