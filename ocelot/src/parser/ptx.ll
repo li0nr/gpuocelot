@@ -166,6 +166,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_MADC; }
 "mad24"                         { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_MAD24; }
+"mma"                           { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_MMA; }
 "max"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_MAX; }
 "mov"                           { sstrcpy( yylval->text, yytext, 1024 ); \
@@ -499,6 +501,12 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return TOKEN_RED; }
 ".sync"                          { yylval->value = TOKEN_SYNC; \
                                     return TOKEN_SYNC; }
+".aligned"                       { yylval->value = TOKEN_ALIGNED; \
+                                    return TOKEN_ALIGNED; }
+".m16n8k16"                      { yylval->value = TOKEN_M16N8K16; \
+                                    return TOKEN_M16N8K16; }
+".row"                           { yylval->value = TOKEN_ROW; return TOKEN_ROW; }
+".col"                           { yylval->value = TOKEN_COL; return TOKEN_COL; }
 ".popc"                         { yylval->value = TOKEN_POPC; \
                                     return TOKEN_POPC; }
 

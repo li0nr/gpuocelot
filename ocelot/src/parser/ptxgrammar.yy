@@ -66,6 +66,7 @@
 %token<text> OPCODE_POPC OPCODE_PRMT OPCODE_CLZ OPCODE_BFIND OPCODE_BREV 
 %token<text> OPCODE_BFI OPCODE_BFE OPCODE_TESTP OPCODE_TLD4 OPCODE_BAR
 %token<text> OPCODE_PREFETCH OPCODE_PREFETCHU OPCODE_SHFL OPCODE_SHF
+%token<text> OPCODE_MMA
 
 %token<value> PREPROCESSOR_INCLUDE PREPROCESSOR_DEFINE PREPROCESSOR_IF 
 %token<value> PREPROCESSOR_IFDEF PREPROCESSOR_ELSE PREPROCESSOR_ENDIF 
@@ -127,7 +128,8 @@
 
 %token<value> TOKEN_TRAP TOKEN_CLAMP TOKEN_ZERO TOKEN_WRAP
 
-%token<value> TOKEN_ARRIVE TOKEN_RED TOKEN_POPC TOKEN_SYNC
+%token<value> TOKEN_ARRIVE TOKEN_RED TOKEN_POPC TOKEN_SYNC TOKEN_ALIGNED
+%token<value> TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
 
 %token<value> TOKEN_BALLOT
 
@@ -685,6 +687,20 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_BFI | OPCODE_TESTP | OPCODE_TLD4
 	| OPCODE_PREFETCH | OPCODE_PREFETCHU;
 
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
+	TOKEN_F32 TOKEN_F16 TOKEN_F16 TOKEN_F32
+	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
+{
+	state.mma( ir::PTXOperand::f16 );
+};
+
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
+	TOKEN_F32 TOKEN_BF16 TOKEN_BF16 TOKEN_F32
+	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
+{
+	state.mma( ir::PTXOperand::bf16 );
+};
+
 uninitializableDeclaration : uninitializable addressableVariablePrefix 
 	identifier arrayDimensions ';'
 {
@@ -853,7 +869,7 @@ optionalFloatRounding : floatRounding | /* empty string */;
 instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2 
 	| basicInstruction3 | bfe | bfi | bfind | brev | branch | addOrSub
 	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | exit
-	| ld | ldu | mad | mad24 | madc | membar | mov | mul24 | mul | notInstruction
+	| ld | ldu | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
 	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust
 	| testp | tex | tld4 | trap | txq | vote | shfl | shf;

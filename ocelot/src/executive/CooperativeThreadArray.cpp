@@ -395,6 +395,24 @@ static ir::PTXF32 bf16ToF32(ir::PTXU16 bits) {
 		static_cast<ir::PTXU32>(bits) << 16);
 }
 
+static ir::PTXU16 mmaHalfBits(executive::CooperativeThreadArray& cta,
+	int threadID, const ir::PTXOperand& operand, unsigned int half)
+{
+	if (operand.bytes() == 4) {
+		return static_cast<ir::PTXU16>(
+			(cta.operandAsB32(threadID, operand) >> (half * 16)) & 0xffffu);
+	}
+	return cta.operandAsU16(threadID, operand);
+}
+
+static ir::PTXF32 mmaHalf(executive::CooperativeThreadArray& cta,
+	int threadID, const ir::PTXOperand& operand, unsigned int half,
+	ir::PTXOperand::DataType type)
+{
+	ir::PTXU16 bits = mmaHalfBits(cta, threadID, operand, half);
+	return type == ir::PTXOperand::bf16 ? bf16ToF32(bits) : f16ToF32(bits);
+}
+
 
 void executive::CooperativeThreadArray::trace() {
 	if (traceEvents) {
@@ -533,6 +551,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Exit(context, instr); break;
 			case ir::PTXInstruction::Fma:
 				eval_Fma(context, instr); break;
+			case ir::PTXInstruction::Mma:
+				eval_Mma(context, instr); break;
 			case ir::PTXInstruction::Isspacep:
 				eval_Isspacep(context, instr); break;
 			case ir::PTXInstruction::Ld:
@@ -4623,6 +4643,81 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 	}
 }
 
+void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+
+	if (threadCount < 32 || threadCount % 32 != 0) {
+		throw RuntimeException("mma requires complete 32-thread warps",
+			context.PC, instr);
+	}
+
+	const ir::PTXOperand::DataType inputType = instr.a.type;
+	for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
+		int participants = 0;
+		for (int lane = 0; lane < 32; ++lane) {
+			if (context.predicated(warpStart + lane, instr)) {
+				++participants;
+			}
+		}
+		if (participants == 0) continue;
+		if (participants != 32) {
+			throw RuntimeException("mma requires all warp lanes to participate",
+				context.PC, instr);
+		}
+
+		ir::PTXF32 A[16][16] = {};
+		ir::PTXF32 B[16][8] = {};
+		ir::PTXF32 C[16][8] = {};
+
+		for (int lane = 0; lane < 32; ++lane) {
+			const int threadID = warpStart + lane;
+			const int groupID = lane >> 2;
+			const int threadInGroup = lane & 3;
+
+			for (unsigned int i = 0; i < 8; ++i) {
+				const int row = (i < 2 || (i >= 4 && i < 6)) ? groupID : groupID + 8;
+				const int col = threadInGroup * 2 + (i & 1) + (i >= 4 ? 8 : 0);
+				A[row][col] = mmaHalf(*this, threadID, instr.a.array[i / 2], i & 1, inputType);
+			}
+
+			for (unsigned int i = 0; i < 4; ++i) {
+				const int row = threadInGroup * 2 + (i & 1) + (i >= 2 ? 8 : 0);
+				const int col = groupID;
+				B[row][col] = mmaHalf(*this, threadID, instr.b.array[i / 2], i & 1, inputType);
+			}
+
+			for (unsigned int i = 0; i < 4; ++i) {
+				const int row = groupID + (i >= 2 ? 8 : 0);
+				const int col = threadInGroup * 2 + (i & 1);
+				C[row][col] = operandAsF32(threadID, instr.c.array[i]);
+			}
+		}
+
+		ir::PTXF32 D[16][8];
+		for (int row = 0; row < 16; ++row) {
+			for (int col = 0; col < 8; ++col) {
+				D[row][col] = C[row][col];
+				for (int k = 0; k < 16; ++k) {
+					D[row][col] = std::fma(A[row][k], B[k][col], D[row][col]);
+				}
+			}
+		}
+
+		for (int lane = 0; lane < 32; ++lane) {
+			const int threadID = warpStart + lane;
+			const int groupID = lane >> 2;
+			const int threadInGroup = lane & 3;
+			for (unsigned int i = 0; i < 4; ++i) {
+				const int row = groupID + (i >= 2 ? 8 : 0);
+				const int col = threadInGroup * 2 + (i & 1);
+				setRegAsF32(threadID, instr.d.array[i].reg,
+					D[row][col]);
+			}
+		}
+	}
+}
+
 
 /*!
 
@@ -6317,7 +6412,17 @@ void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::
 */
 void executive::CooperativeThreadArray::eval_Neg(CTAContext &context, const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f16) {
+	if (instr.type == ir::PTXOperand::bf16) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+
+			ir::PTXF32 a = ftz(instr.modifier,
+				bf16ToF32(operandAsU16(threadID, instr.a)));
+			ir::PTXU16 d = f32ToBF16Rn(-a);
+			setRegAsB16(threadID, instr.d.reg, d);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f16) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 

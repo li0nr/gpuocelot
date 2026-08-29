@@ -1930,6 +1930,27 @@ namespace parser
 		instruction( opcode, TOKEN_B64 );
 	}
 
+	void PTXParser::State::mma( ir::PTXOperand::DataType operandType )
+	{
+		assert( operandVector.size() == 5 );
+
+		statement.directive = ir::PTXStatement::Instr;
+		statement.instruction.opcode = ir::PTXInstruction::Mma;
+		statement.instruction.type = ir::PTXOperand::f32;
+		statement.instruction.pg = operandVector[0].operand;
+		statement.instruction.d = operandVector[1].operand;
+		statement.instruction.a = operandVector[2].operand;
+		statement.instruction.b = operandVector[3].operand;
+		statement.instruction.c = operandVector[4].operand;
+
+		statement.instruction.d.type = ir::PTXOperand::f32;
+		statement.instruction.c.type = ir::PTXOperand::f32;
+		statement.instruction.a.type = operandType;
+		statement.instruction.b.type = operandType;
+
+		_setImmediateTypes();
+	}
+
 	void PTXParser::State::tex( int dataType )
 	{
 		report( "  Rule: instruction : tex" );
@@ -2614,6 +2635,7 @@ namespace parser
 		if( string == "mad24" ) return ir::PTXInstruction::Mad24;
 		if( string == "mad" ) return ir::PTXInstruction::Mad;
 		if( string == "madc" ) return ir::PTXInstruction::MadC;
+		if( string == "mma" ) return ir::PTXInstruction::Mma;
 		if( string == "max" ) return ir::PTXInstruction::Max;
 		if( string == "membar" ) return ir::PTXInstruction::Membar;
 		if( string == "min" ) return ir::PTXInstruction::Min;

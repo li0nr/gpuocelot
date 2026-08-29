@@ -43,7 +43,7 @@ public:
 
 		status << "Test output:\n";
 
-		threadCount = 16;
+		threadCount = 32;
 
 		const std::string ptx = "TestInstructions_ptx";
 
@@ -1513,6 +1513,34 @@ public:
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Neg;
 
+		// bf16
+		//
+		if (result) {
+			ins.type = PTXOperand::bf16;
+			ins.modifier = PTXInstruction::rn;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.d = reg("r3", PTXOperand::b16, 2);
+
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU16(i, 0, 0x3fc0); // 1.5
+				cta->setRegAsU16(i, 2, 0);
+			}
+			if (!ins.valid().empty()) {
+				result = false;
+				status << "neg.bf16 rejected\n";
+			}
+			else {
+				cta->eval_Neg(cta->getActiveContext(), ins);
+				for (int i = 0; i < threadCount; i++) {
+					if (cta->getRegAsU16(i, 2) != 0xbfc0) { // -1.5
+						result = false;
+						status << "neg.bf16 incorrect\n";
+						break;
+					}
+				}
+			}
+		}
+
 		// f16
 		//
 		if (result) {
@@ -2864,6 +2892,135 @@ public:
 				status << "fma.rn.f16 incorrect [" << i << "]\n";
 				return false;
 			}
+		}
+
+		return true;
+	}
+
+	bool test_Mma() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Mma;
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn;
+
+		auto vector = [this](PTXOperand::DataType type,
+			PTXOperand::DataType elementType, PTXOperand::Vec vec,
+			int firstRegister, int count) {
+			PTXOperand operand;
+			operand.addressMode = PTXOperand::Register;
+			operand.type = type;
+			operand.vec = vec;
+			for(int i = 0; i < count; ++i) {
+				operand.array.push_back(reg("mma", elementType,
+					(PTXOperand::RegisterType)(firstRegister + i)));
+			}
+			return operand;
+		};
+
+		ins.d = vector(PTXOperand::f32, PTXOperand::f32,
+			PTXOperand::v4, 0, 4);
+		ins.c = vector(PTXOperand::f32, PTXOperand::f32,
+			PTXOperand::v4, 6, 4);
+		ins.a = vector(PTXOperand::f16, PTXOperand::b32,
+			PTXOperand::v4, 0, 4);
+		ins.b = vector(PTXOperand::f16, PTXOperand::b32,
+			PTXOperand::v2, 4, 2);
+
+		const PTXU16 f16Values[17] = {
+			0x0000, 0x3c00, 0x4000, 0x4200, 0x4400, 0x4500,
+			0x4600, 0x4700, 0x4800, 0x4880, 0x4900, 0x4980,
+			0x4a00, 0x4a80, 0x4b00, 0x4b80, 0x4c00
+		};
+		cta->reset();
+		for(int thread = 0; thread < threadCount; ++thread) {
+			const int lane = thread & 31;
+			const int groupID = lane >> 2;
+			const int threadInGroup = lane & 3;
+			for(int regIndex = 0; regIndex < 4; ++regIndex) {
+				PTXU32 packed = 0;
+				for(int half = 0; half < 2; ++half) {
+					const int i = regIndex * 2 + half;
+					const int row = (i < 2 || (i >= 4 && i < 6))
+						? groupID : groupID + 8;
+					const int value = row + 1;
+					packed |= (PTXU32)f16Values[value] << (16 * half);
+				}
+				cta->setRegAsB32(thread, regIndex, packed);
+			}
+			for(int regIndex = 0; regIndex < 2; ++regIndex) {
+				PTXU32 packed = 0;
+				for(int half = 0; half < 2; ++half) {
+					const int col = groupID;
+					packed |= (PTXU32)f16Values[col + 1] << (16 * half);
+				}
+				cta->setRegAsB32(thread, 4 + regIndex, packed);
+			}
+			for(int i = 0; i < 4; ++i) {
+				const int row = groupID + (i >= 2 ? 8 : 0);
+				const int col = threadInGroup * 2 + (i & 1);
+				cta->setRegAsF32(thread, 6 + i, (PTXF32)(100 * row + col));
+			}
+		}
+
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for(int thread = 0; thread < threadCount; ++thread) {
+			const int lane = thread & 31;
+			const int groupID = lane >> 2;
+			const int threadInGroup = lane & 3;
+			for(int regIndex = 0; regIndex < 4; ++regIndex) {
+				const int row = groupID + (regIndex >= 2 ? 8 : 0);
+				const int col = threadInGroup * 2 + (regIndex & 1);
+				const PTXF32 expected = 16.0f * (row + 1) * (col + 1)
+					+ (PTXF32)(100 * row + col);
+				if(std::fabs(cta->getRegAsF32(thread, regIndex) - expected) > 0.001f) {
+					status << "mma.m16n8k16.f16 incorrect ["
+						<< thread << "]\n";
+					return false;
+				}
+			}
+		}
+
+		ins.a.type = PTXOperand::bf16;
+		ins.b.type = PTXOperand::bf16;
+		const PTXU32 bf16One = 0x3f803f80u;
+		const PTXU32 bf16Two = 0x40004000u;
+		cta->reset();
+		for(int thread = 0; thread < threadCount; ++thread) {
+			for(int regIndex = 0; regIndex < 4; ++regIndex) {
+				cta->setRegAsB32(thread, regIndex, bf16One);
+			}
+			for(int regIndex = 4; regIndex < 6; ++regIndex) {
+				cta->setRegAsB32(thread, regIndex, bf16Two);
+			}
+			for(int regIndex = 6; regIndex < 10; ++regIndex) {
+				cta->setRegAsF32(thread, regIndex, 3.0f);
+			}
+		}
+
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for(int thread = 0; thread < threadCount; ++thread) {
+			for(int regIndex = 0; regIndex < 4; ++regIndex) {
+				if(std::fabs(cta->getRegAsF32(thread, regIndex) - 35.0f) > 0.001f) {
+					status << "mma.m16n8k16.bf16 incorrect ["
+						<< thread << "]\n";
+					return false;
+				}
+			}
+		}
+
+		// MMA is warp-collective: a partially active warp must not execute it.
+		cta->getActiveContext().active[0] = false;
+		bool rejectedPartialWarp = false;
+		try {
+			cta->eval_Mma(cta->getActiveContext(), ins);
+		}
+		catch (RuntimeException &) {
+			rejectedPartialWarp = true;
+		}
+		cta->getActiveContext().active[0] = true;
+		if (!rejectedPartialWarp) {
+			status << "mma.m16n8k16 accepted a partial warp\n";
+			return false;
 		}
 
 		return true;
@@ -4943,6 +5100,7 @@ public:
 			result = (result && test_Ex2());
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());
+			result = (result && test_Mma());
 			result = (result && test_Lg2());
 			result = (result && test_Sqrt());
 			result = (result && test_Rsqrt());

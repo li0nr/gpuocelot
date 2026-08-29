@@ -382,6 +382,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Lg2:        return "lg2";        break;
 		case Mad24:      return "mad24";      break;
 		case Mad:        return "mad";        break;
+		case Mma:        return "mma";        break;
 		case MadC:       return "madc";        break;
 		case Max:        return "max";        break;
 		case Membar:     return "membar";     break;
@@ -1091,6 +1092,53 @@ std::string ir::PTXInstruction::valid() const {
 				if( PTXOperand::isInt( type ) ) {
 					return toString( ftz ) 
 						+ " only valid for float point instructions.";
+				}
+			}
+			break;
+		}
+		case Mma: {
+			if (type != PTXOperand::f32) {
+				return "mma.m16n8k16 requires f32 accumulators";
+			}
+			if (a.type != PTXOperand::f16 && a.type != PTXOperand::bf16) {
+				return "mma A type must be f16 or bf16";
+			}
+			if (b.type != a.type) {
+				return "mma A and B types must match";
+			}
+			if (d.type != PTXOperand::f32 || c.type != PTXOperand::f32) {
+				return "mma C and D types must be f32";
+			}
+			if (d.vec != PTXOperand::v4 || c.vec != PTXOperand::v4 ||
+				a.vec != PTXOperand::v4 || b.vec != PTXOperand::v2) {
+				return "mma.m16n8k16 has invalid fragment sizes";
+			}
+			if (d.array.size() != 4 || c.array.size() != 4 ||
+				a.array.size() != 4 || b.array.size() != 2) {
+				return "mma.m16n8k16 has invalid fragment register counts";
+			}
+			for (PTXOperand::Array::const_iterator element = a.array.begin();
+				element != a.array.end(); ++element) {
+				if (element->type != PTXOperand::b32) {
+					return "mma A fragment registers must be 32-bit packed values";
+				}
+			}
+			for (PTXOperand::Array::const_iterator element = b.array.begin();
+				element != b.array.end(); ++element) {
+				if (element->type != PTXOperand::b32) {
+					return "mma B fragment registers must be 32-bit packed values";
+				}
+			}
+			for (PTXOperand::Array::const_iterator element = c.array.begin();
+				element != c.array.end(); ++element) {
+				if (element->type != PTXOperand::f32) {
+					return "mma C fragment registers must be f32";
+				}
+			}
+			for (PTXOperand::Array::const_iterator element = d.array.begin();
+				element != d.array.end(); ++element) {
+				if (element->type != PTXOperand::f32) {
+					return "mma D fragment registers must be f32";
 				}
 			}
 			break;
@@ -2363,6 +2411,15 @@ std::string ir::PTXInstruction::toString() const {
 			result += modifierString( modifier, carry );
 			result += PTXOperand::toString( type ) + " " + d.toString() + ", " 
 				+ a.toString() + ", " + b.toString() + ", " + c.toString();
+			return result;
+		}
+		case Mma: {
+			std::string result = guard() +
+				"mma.sync.aligned.m16n8k16.row.col.f32." +
+				PTXOperand::toString(a.type) + "." +
+				PTXOperand::toString(b.type) + ".f32 " +
+				d.toString() + ", " + a.toString() + ", " +
+				b.toString() + ", " + c.toString();
 			return result;
 		}
 		case MadC: {

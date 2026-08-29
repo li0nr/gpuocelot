@@ -269,6 +269,7 @@ namespace parser
 					void instruction();
 					void instruction( const std::string& opcode, int dataType );
 					void instruction( const std::string& opcode );
+					void mma( ir::PTXOperand::DataType operandType );
 					void tex( int dataType );
 					void tld4( int dataType );
 					void callPrototypeName( const std::string& identifier );

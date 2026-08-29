@@ -54,6 +54,7 @@ namespace ir {
 			Mad24,
 			Mad,
 			MadC,
+			Mma,
 			Max,
 			Membar,
 			Min,
@@ -602,4 +603,3 @@ namespace ir {
 }
 
 #endif
-
