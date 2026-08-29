@@ -1313,7 +1313,8 @@ std::string ir::PTXInstruction::valid() const {
 		case Neg: {
 			if( type != PTXOperand::s16 && type != PTXOperand::s32 && 
 				type != PTXOperand::s64 && type != PTXOperand::f32 && 
-				type != PTXOperand::f64 && type != PTXOperand::f16 ) {
+				type != PTXOperand::f64 && type != PTXOperand::f16 &&
+				type != PTXOperand::bf16 ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
