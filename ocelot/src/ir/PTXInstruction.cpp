@@ -1228,13 +1228,14 @@ std::string ir::PTXInstruction::valid() const {
 		}
 		case Mov: {
 			if ( ( a.type == PTXOperand::f16 ) &&
+				a.array.empty() &&
 				a.addressMode != PTXOperand::Address &&
 				a.addressMode != PTXOperand::Immediate ) {
 				return "invalid type for operand A " 
 					+ PTXOperand::toString( a.type );
 			}
 			if ( !( d.type != PTXOperand::s8 && d.type != PTXOperand::u8 
-				&& d.type != PTXOperand::b8 && d.type != PTXOperand::f16 ) ) {
+				&& d.type != PTXOperand::b8 ) ) {
 				return "invalid type for operand D " 
 					+ PTXOperand::toString( d.type );
 			}
