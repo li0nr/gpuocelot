@@ -1131,14 +1131,14 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			for (PTXOperand::Array::const_iterator element = c.array.begin();
 				element != c.array.end(); ++element) {
-				if (element->type != PTXOperand::f32) {
-					return "mma C fragment registers must be f32";
+				if (!PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
+					return "mma C fragment registers must be f32 or b32";
 				}
 			}
 			for (PTXOperand::Array::const_iterator element = d.array.begin();
 				element != d.array.end(); ++element) {
-				if (element->type != PTXOperand::f32) {
-					return "mma D fragment registers must be f32";
+				if (!PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
+					return "mma D fragment registers must be f32 or b32";
 				}
 			}
 			break;
