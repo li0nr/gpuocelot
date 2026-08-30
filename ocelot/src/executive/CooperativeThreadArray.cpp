@@ -6100,6 +6100,12 @@ void executive::CooperativeThreadArray::eval_Mov_imm(CTAContext &context,
 				setRegAsU16(threadID, instr.d.reg, a);
 			}
 			break;
+		case ir::PTXOperand::f16:
+			{
+				ir::PTXU16 a = operandAsU16(threadID, instr.a);
+				setRegAsB16(threadID, instr.d.reg, a);
+			}
+			break;
 		case ir::PTXOperand::u32:
 		case ir::PTXOperand::s32:
 		case ir::PTXOperand::b32:
