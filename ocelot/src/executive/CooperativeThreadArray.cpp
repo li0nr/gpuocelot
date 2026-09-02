@@ -4569,6 +4569,16 @@ void executive::CooperativeThreadArray::eval_Ex2(CTAContext &context,
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
+	else if (instr.type == ir::PTXOperand::f16) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+
+			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+				operandAsU16(threadID, instr.a)));
+			setRegAsB16(threadID, instr.d.reg,
+				toF16(hydrazine::exp2f(a), instr.modifier));
+		}
+	}
 	else {
 		throw RuntimeException("unsupported data type", context.PC, instr);
 	}
