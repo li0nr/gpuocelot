@@ -129,7 +129,7 @@
 %token<value> TOKEN_TRAP TOKEN_CLAMP TOKEN_ZERO TOKEN_WRAP
 
 %token<value> TOKEN_ARRIVE TOKEN_RED TOKEN_POPC TOKEN_SYNC TOKEN_ALIGNED
-%token<value> TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
+%token<value> TOKEN_M16N8K8 TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
 
 %token<value> TOKEN_BALLOT
 
@@ -137,6 +137,8 @@
 
 %token<value> TOKEN_FINITE TOKEN_INFINITE TOKEN_NUMBER TOKEN_NOT_A_NUMBER
 %token<value> TOKEN_NORMAL TOKEN_SUBNORMAL
+
+%type<value> mmaShape mmaAccumulatorTypeId mmaInputTypeId
 
 %token<value> TOKEN_DECIMAL_CONSTANT
 
@@ -688,19 +690,18 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_BFI | OPCODE_TESTP | OPCODE_TLD4
 	| OPCODE_PREFETCH | OPCODE_PREFETCHU;
 
-mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
-	TOKEN_F32 TOKEN_F16 TOKEN_F16 TOKEN_F32
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
+	mmaAccumulatorTypeId mmaInputTypeId mmaInputTypeId mmaAccumulatorTypeId
 	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
 {
-	state.mma( ir::PTXOperand::f16 );
+	state.mma( $<value>7, $<value>8, $<value>9, $<value>10 );
 };
 
-mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED TOKEN_M16N8K16 TOKEN_ROW TOKEN_COL
-	TOKEN_F32 TOKEN_BF16 TOKEN_BF16 TOKEN_F32
-	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
-{
-	state.mma( ir::PTXOperand::bf16 );
-};
+mmaShape : TOKEN_M16N8K8 | TOKEN_M16N8K16;
+
+mmaAccumulatorTypeId : TOKEN_F16 | TOKEN_F32;
+
+mmaInputTypeId : TOKEN_F16 | TOKEN_BF16;
 
 uninitializableDeclaration : uninitializable addressableVariablePrefix 
 	identifier arrayDimensions ';'
