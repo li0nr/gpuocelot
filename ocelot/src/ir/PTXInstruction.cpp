@@ -1171,7 +1171,7 @@ std::string ir::PTXInstruction::valid() const {
 		}
 		case Max: {
 			if( !( type != PTXOperand::s8 && type != PTXOperand::u8 && 
-				type != PTXOperand::b8 && type != PTXOperand::f16 
+				type != PTXOperand::b8
 				&& type != PTXOperand::pred ) ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
