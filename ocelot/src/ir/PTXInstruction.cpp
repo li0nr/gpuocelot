@@ -922,7 +922,7 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Ex2: {
-			if( !( type == PTXOperand::f32 ) ) {
+			if( !( type == PTXOperand::f32 || type == PTXOperand::f16 ) ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
