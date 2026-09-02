@@ -144,6 +144,12 @@ namespace ir {
 			None = 0,
 			CC = 1
 		};
+
+		enum MmaShape {
+			MmaM16N8K8,
+			MmaM16N8K16,
+			MmaShape_Invalid
+		};
 		
 		enum Volatility {
 			Nonvolatile = 0,
@@ -426,6 +432,9 @@ namespace ir {
 
 		/*! indicates data type of instruction */
 		PTXOperand::DataType type;
+
+		/*! Shape for MMA instructions */
+		MmaShape mmaShape;
 
 		/*! Flag containing one or more floating-point modifiers */
 		unsigned int modifier;

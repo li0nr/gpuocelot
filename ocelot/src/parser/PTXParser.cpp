@@ -1930,8 +1930,8 @@ namespace parser
 		instruction( opcode, TOKEN_B64 );
 	}
 
-	void PTXParser::State::mma( int accumulatorToken, int aToken,
-		int bToken, int cToken )
+	void PTXParser::State::mma( int shapeToken, int accumulatorToken,
+		int aToken, int bToken, int cToken )
 	{
 		assert( operandVector.size() == 5 );
 		ir::PTXOperand::DataType accumulatorType = tokenToDataType( accumulatorToken );
@@ -1941,6 +1941,9 @@ namespace parser
 
 		statement.directive = ir::PTXStatement::Instr;
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
+		statement.instruction.mmaShape = shapeToken == TOKEN_M16N8K8
+			? ir::PTXInstruction::MmaM16N8K8
+			: ir::PTXInstruction::MmaM16N8K16;
 		statement.instruction.type = accumulatorType;
 		statement.instruction.pg = operandVector[0].operand;
 		statement.instruction.d = operandVector[1].operand;
@@ -2562,6 +2565,7 @@ namespace parser
 			case TOKEN_F16:  return ir::PTXOperand::f16; break;
 			case TOKEN_F32:  return ir::PTXOperand::f32; break;
 			case TOKEN_BF16: return ir::PTXOperand::bf16; break;
+			case TOKEN_TF32: return ir::PTXOperand::tf32; break;
 			case TOKEN_F64:  return ir::PTXOperand::f64; break;
 			default:
 			{

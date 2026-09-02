@@ -362,6 +362,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".f64"			            	{ yylval->value = TOKEN_F64; return TOKEN_F64; }
 ".f32"			            	{ yylval->value = TOKEN_F32; return TOKEN_F32; }
 ".bf16"			            	{ yylval->value = TOKEN_BF16; return TOKEN_BF16; }
+".tf32"			            	{ yylval->value = TOKEN_TF32; return TOKEN_TF32; }
 ".pred"		                    { yylval->value = TOKEN_PRED; \
                                     return TOKEN_PRED; }
 

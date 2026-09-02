@@ -51,6 +51,7 @@ std::string ir::PTXOperand::toString( DataType type ) {
 		case f16:  return "f16";  break;
 		case f32:  return "f32";  break;
 		case bf16: return "bf16"; break;
+		case tf32: return "tf32"; break;
 		case f64:  return "f64";  break;
 		case pred: return "pred"; break;
 		default: break;
@@ -201,6 +202,7 @@ unsigned int ir::PTXOperand::bytes( DataType type ) {
 		case u32:  /* fall through */
 		case b32:  /* fall through */
 		case f32:  /* fall through */
+		case tf32: /* fall through */
 		case s32:  return 4; break;
 		case f64:  /* fall through */
 		case u64:  /* fall through */
@@ -878,4 +880,3 @@ bool ir::PTXOperand::isRegister() const {
 bool ir::PTXOperand::isVector() const {
 	return isRegister() && vec != v1;
 }
-

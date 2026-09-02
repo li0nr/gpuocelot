@@ -387,6 +387,18 @@ static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
 	return static_cast<ir::PTXF32>(half);
 }
 
+static ir::PTXF32 tf32FromF32(ir::PTXF32 value) {
+	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
+	if ((bits & 0x7f800000u) == 0x7f800000u) return value;
+	const ir::PTXU32 discarded = bits & 0x1fffu;
+	bits &= ~0x1fffu;
+	if (discarded > 0x1000u ||
+		(discarded == 0x1000u && (bits & 0x2000u))) {
+		bits += 0x2000u;
+	}
+	return hydrazine::bit_cast<ir::PTXF32>(bits);
+}
+
 template< typename Source >
 static ir::PTXU16 toF16(Source value, int modifier);
 
@@ -412,7 +424,6 @@ static ir::PTXF32 mmaHalf(executive::CooperativeThreadArray& cta,
 	ir::PTXU16 bits = mmaHalfBits(cta, threadID, operand, half);
 	return type == ir::PTXOperand::bf16 ? bf16ToF32(bits) : f16ToF32(bits);
 }
-
 
 void executive::CooperativeThreadArray::trace() {
 	if (traceEvents) {
@@ -4664,7 +4675,8 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 
 	const ir::PTXOperand::DataType inputType = instr.a.type;
 	const bool halfAccumulator = instr.type == ir::PTXOperand::f16;
-	const bool m16n8k8 = instr.a.array.size() == 2 && instr.b.array.size() == 1;
+	const bool tf32Input = inputType == ir::PTXOperand::tf32;
+	const bool m16n8k8 = instr.mmaShape == ir::PTXInstruction::MmaM16N8K8;
 	for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
 		int participants = 0;
 		for (int lane = 0; lane < 32; ++lane) {
@@ -4687,7 +4699,22 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 			int groupID = lane >> 2;
 			int threadInGroup = lane & 3;
 
-			if (m16n8k8) {
+			if (tf32Input) {
+				for (int i = 0; i < 4; ++i) {
+					int row = (i & 1) ? groupID + 8 : groupID;
+					int col = threadInGroup + (i >= 2 ? 4 : 0);
+					A[row][col] = tf32FromF32(operandAsF32(threadID,
+						instr.a.array[i]));
+				}
+
+				for (int i = 0; i < 2; ++i) {
+					int row = threadInGroup + (i >= 1 ? 4 : 0);
+					int col = groupID;
+					B[row][col] = tf32FromF32(operandAsF32(threadID,
+						instr.b.array[i]));
+				}
+			}
+			else if (m16n8k8) {
 				for (int i = 0; i < 4; ++i) {
 					int row = i < 2 ? groupID : groupID + 8;
 					int col = threadInGroup * 2 + (i & 1);

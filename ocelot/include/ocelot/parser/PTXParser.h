@@ -269,7 +269,7 @@ namespace parser
 					void instruction();
 					void instruction( const std::string& opcode, int dataType );
 					void instruction( const std::string& opcode );
-					void mma( int accumulatorType, int aType, int bType, int cType );
+					void mma( int shape, int accumulatorType, int aType, int bType, int cType );
 					void tex( int dataType );
 					void tld4( int dataType );
 					void callPrototypeName( const std::string& identifier );
