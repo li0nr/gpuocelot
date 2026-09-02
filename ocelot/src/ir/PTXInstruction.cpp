@@ -459,6 +459,7 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	reconvergeInstruction = 0;
 	branchTargetInstruction = 0;
 	vec = PTXOperand::v1;
+	mmaShape = MmaShape_Invalid;
 	pg.condition = PTXOperand::PT;
 	pg.type = PTXOperand::pred;
 	barrierOperation = BarSync;
@@ -1097,25 +1098,52 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Mma: {
-			if (type != PTXOperand::f32) {
-				return "mma.m16n8k16 requires f32 accumulators";
+			const bool m16n8k8 = mmaShape == MmaM16N8K8;
+			const bool tf32Input = a.type == PTXOperand::tf32;
+			const bool halfAccumulator = type == PTXOperand::f16;
+			if (mmaShape == MmaShape_Invalid) {
+				return "mma has no shape";
 			}
-			if (a.type != PTXOperand::f16 && a.type != PTXOperand::bf16) {
-				return "mma A type must be f16 or bf16";
+			if (!halfAccumulator && type != PTXOperand::f32) {
+				return "mma requires f16 or f32 accumulators";
+			}
+			if (a.type != PTXOperand::f16 && a.type != PTXOperand::bf16 &&
+				a.type != PTXOperand::tf32) {
+				return "mma A type must be f16, bf16, or tf32";
+			}
+			if (tf32Input && (!m16n8k8 || type != PTXOperand::f32 ||
+				b.type != PTXOperand::tf32)) {
+				return "tf32 mma requires m16n8k8 with f32 accumulators";
+			}
+			if (halfAccumulator && a.type != PTXOperand::f16) {
+				return "f16 mma accumulators require f16 inputs";
 			}
 			if (b.type != a.type) {
 				return "mma A and B types must match";
 			}
-			if (d.type != PTXOperand::f32 || c.type != PTXOperand::f32) {
-				return "mma C and D types must be f32";
+			if (d.type != type || c.type != type) {
+				return halfAccumulator ? "mma C and D types must be f16"
+					: "mma C and D types must be f32";
 			}
-			if (d.vec != PTXOperand::v4 || c.vec != PTXOperand::v4 ||
-				a.vec != PTXOperand::v4 || b.vec != PTXOperand::v2) {
-				return "mma.m16n8k16 has invalid fragment sizes";
+			const PTXOperand::Vec accumulatorVec = halfAccumulator
+				? PTXOperand::v2 : PTXOperand::v4;
+			const unsigned int accumulatorRegisters = halfAccumulator ? 2 : 4;
+			const bool compactInputFragment = m16n8k8 && !tf32Input;
+			const PTXOperand::Vec inputAVec = compactInputFragment
+				? PTXOperand::v2 : PTXOperand::v4;
+			const PTXOperand::Vec inputBVec = compactInputFragment
+				? PTXOperand::v1 : PTXOperand::v2;
+			if (d.vec != accumulatorVec || c.vec != accumulatorVec ||
+				a.vec != inputAVec || b.vec != inputBVec) {
+				return m16n8k8 ? "mma.m16n8k8 has invalid fragment sizes"
+					: "mma.m16n8k16 has invalid fragment sizes";
 			}
-			if (d.array.size() != 4 || c.array.size() != 4 ||
-				a.array.size() != 4 || b.array.size() != 2) {
-				return "mma.m16n8k16 has invalid fragment register counts";
+			if (d.array.size() != accumulatorRegisters ||
+				c.array.size() != accumulatorRegisters ||
+				a.array.size() != (compactInputFragment ? 2u : 4u) ||
+				b.array.size() != (compactInputFragment ? 1u : 2u)) {
+				return m16n8k8 ? "mma.m16n8k8 has invalid fragment register counts"
+					: "mma.m16n8k16 has invalid fragment register counts";
 			}
 			for (PTXOperand::Array::const_iterator element = a.array.begin();
 				element != a.array.end(); ++element) {
@@ -1131,14 +1159,18 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			for (PTXOperand::Array::const_iterator element = c.array.begin();
 				element != c.array.end(); ++element) {
-				if (!PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
-					return "mma C fragment registers must be f32 or b32";
+				if (halfAccumulator ? element->type != PTXOperand::b32
+					: !PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
+					return halfAccumulator ? "mma C fragment registers must be b32"
+						: "mma C fragment registers must be f32 or b32";
 				}
 			}
 			for (PTXOperand::Array::const_iterator element = d.array.begin();
 				element != d.array.end(); ++element) {
-				if (!PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
-					return "mma D fragment registers must be f32 or b32";
+				if (halfAccumulator ? element->type != PTXOperand::b32
+					: !PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
+					return halfAccumulator ? "mma D fragment registers must be b32"
+						: "mma D fragment registers must be f32 or b32";
 				}
 			}
 			break;
@@ -2417,10 +2449,15 @@ std::string ir::PTXInstruction::toString() const {
 			return result;
 		}
 		case Mma: {
+			const bool m16n8k8 = mmaShape == MmaM16N8K8;
 			std::string result = guard() +
-				"mma.sync.aligned.m16n8k16.row.col.f32." +
+				"mma.sync.aligned.m" +
+				(m16n8k8 ? "16n8k8" : "16n8k16") +
+				".row.col." +
+				PTXOperand::toString(type) + "." +
 				PTXOperand::toString(a.type) + "." +
-				PTXOperand::toString(b.type) + ".f32 " +
+				PTXOperand::toString(b.type) + "." +
+				PTXOperand::toString(c.type) + " " +
 				d.toString() + ", " + a.toString() + ", " +
 				b.toString() + ", " + c.toString();
 			return result;

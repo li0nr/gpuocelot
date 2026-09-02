@@ -87,7 +87,7 @@
 
 %token<value> TOKEN_U32 TOKEN_S32 TOKEN_S8 TOKEN_S16 TOKEN_S64 TOKEN_U8 
 %token<value> TOKEN_U16 TOKEN_U64 TOKEN_B8 TOKEN_B16 TOKEN_B32 TOKEN_B64 
-%token<value> TOKEN_F16 TOKEN_F64 TOKEN_F32 TOKEN_BF16 TOKEN_PRED
+%token<value> TOKEN_F16 TOKEN_F64 TOKEN_F32 TOKEN_BF16 TOKEN_TF32 TOKEN_PRED
 
 %token<value> TOKEN_EQ TOKEN_NE TOKEN_LT TOKEN_LE TOKEN_GT TOKEN_GE
 %token<value> TOKEN_LS TOKEN_HS TOKEN_EQU TOKEN_NEU TOKEN_LTU TOKEN_LEU
@@ -694,14 +694,14 @@ mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
 	mmaAccumulatorTypeId mmaInputTypeId mmaInputTypeId mmaAccumulatorTypeId
 	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
 {
-	state.mma( $<value>7, $<value>8, $<value>9, $<value>10 );
+	state.mma( $<value>4, $<value>7, $<value>8, $<value>9, $<value>10 );
 };
 
 mmaShape : TOKEN_M16N8K8 | TOKEN_M16N8K16;
 
 mmaAccumulatorTypeId : TOKEN_F16 | TOKEN_F32;
 
-mmaInputTypeId : TOKEN_F16 | TOKEN_BF16;
+mmaInputTypeId : TOKEN_F16 | TOKEN_BF16 | TOKEN_TF32;
 
 uninitializableDeclaration : uninitializable addressableVariablePrefix 
 	identifier arrayDimensions ';'

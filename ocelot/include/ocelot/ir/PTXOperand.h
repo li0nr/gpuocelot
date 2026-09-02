@@ -64,6 +64,7 @@ namespace ir {
 			f16,
 			f32,
 			bf16,
+			tf32,
 			f64,
 			b8,
 			b16,
