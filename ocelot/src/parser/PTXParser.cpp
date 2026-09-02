@@ -1930,23 +1930,28 @@ namespace parser
 		instruction( opcode, TOKEN_B64 );
 	}
 
-	void PTXParser::State::mma( ir::PTXOperand::DataType operandType )
+	void PTXParser::State::mma( int accumulatorToken, int aToken,
+		int bToken, int cToken )
 	{
 		assert( operandVector.size() == 5 );
+		ir::PTXOperand::DataType accumulatorType = tokenToDataType( accumulatorToken );
+		ir::PTXOperand::DataType aType = tokenToDataType( aToken );
+		ir::PTXOperand::DataType bType = tokenToDataType( bToken );
+		ir::PTXOperand::DataType cType = tokenToDataType( cToken );
 
 		statement.directive = ir::PTXStatement::Instr;
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
-		statement.instruction.type = ir::PTXOperand::f32;
+		statement.instruction.type = accumulatorType;
 		statement.instruction.pg = operandVector[0].operand;
 		statement.instruction.d = operandVector[1].operand;
 		statement.instruction.a = operandVector[2].operand;
 		statement.instruction.b = operandVector[3].operand;
 		statement.instruction.c = operandVector[4].operand;
 
-		statement.instruction.d.type = ir::PTXOperand::f32;
-		statement.instruction.c.type = ir::PTXOperand::f32;
-		statement.instruction.a.type = operandType;
-		statement.instruction.b.type = operandType;
+		statement.instruction.d.type = accumulatorType;
+		statement.instruction.c.type = cType;
+		statement.instruction.a.type = aType;
+		statement.instruction.b.type = bType;
 
 		_setImmediateTypes();
 	}

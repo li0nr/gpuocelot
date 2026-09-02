@@ -4663,6 +4663,8 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 	}
 
 	const ir::PTXOperand::DataType inputType = instr.a.type;
+	const bool halfAccumulator = instr.type == ir::PTXOperand::f16;
+	const bool m16n8k8 = instr.a.array.size() == 2 && instr.b.array.size() == 1;
 	for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
 		int participants = 0;
 		for (int lane = 0; lane < 32; ++lane) {
@@ -4681,26 +4683,47 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 		ir::PTXF32 C[16][8] = {};
 
 		for (int lane = 0; lane < 32; ++lane) {
-			const int threadID = warpStart + lane;
-			const int groupID = lane >> 2;
-			const int threadInGroup = lane & 3;
+			int threadID = warpStart + lane;
+			int groupID = lane >> 2;
+			int threadInGroup = lane & 3;
 
-			for (unsigned int i = 0; i < 8; ++i) {
-				const int row = (i < 2 || (i >= 4 && i < 6)) ? groupID : groupID + 8;
-				const int col = threadInGroup * 2 + (i & 1) + (i >= 4 ? 8 : 0);
-				A[row][col] = mmaHalf(*this, threadID, instr.a.array[i / 2], i & 1, inputType);
+			if (m16n8k8) {
+				for (int i = 0; i < 4; ++i) {
+					int row = i < 2 ? groupID : groupID + 8;
+					int col = threadInGroup * 2 + (i & 1);
+					A[row][col] = mmaHalf(*this, threadID,
+						instr.a.array[i / 2], i & 1, inputType);
+				}
+
+				for (int i = 0; i < 2; ++i) {
+					int row = threadInGroup * 2 + (i & 1);
+					B[row][groupID] = mmaHalf(*this, threadID,
+						instr.b.array[0], i, inputType);
+				}
+			}
+			else {
+				for (int i = 0; i < 8; ++i) {
+					int row = (i < 2 || (i >= 4 && i < 6)) ? groupID : groupID + 8;
+					int col = threadInGroup * 2 + (i & 1) + (i >= 4 ? 8 : 0);
+					A[row][col] = mmaHalf(*this, threadID,
+						instr.a.array[i / 2], i & 1, inputType);
+				}
+
+				for (int i = 0; i < 4; ++i) {
+					int row = threadInGroup * 2 + (i & 1) + (i >= 2 ? 8 : 0);
+					int col = groupID;
+					B[row][col] = mmaHalf(*this, threadID,
+						instr.b.array[i / 2], i & 1, inputType);
+				}
 			}
 
-			for (unsigned int i = 0; i < 4; ++i) {
-				const int row = threadInGroup * 2 + (i & 1) + (i >= 2 ? 8 : 0);
-				const int col = groupID;
-				B[row][col] = mmaHalf(*this, threadID, instr.b.array[i / 2], i & 1, inputType);
-			}
-
-			for (unsigned int i = 0; i < 4; ++i) {
-				const int row = groupID + (i >= 2 ? 8 : 0);
-				const int col = threadInGroup * 2 + (i & 1);
-				C[row][col] = operandAsF32(threadID, instr.c.array[i]);
+			for (int i = 0; i < 4; ++i) {
+				int row = groupID + (i >= 2 ? 8 : 0);
+				int col = threadInGroup * 2 + (i & 1);
+				C[row][col] = halfAccumulator
+					? mmaHalf(*this, threadID, instr.c.array[i / 2], i & 1,
+						ir::PTXOperand::f16)
+					: operandAsF32(threadID, instr.c.array[i]);
 			}
 		}
 
@@ -4708,19 +4731,33 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 		for (int row = 0; row < 16; ++row) {
 			for (int col = 0; col < 8; ++col) {
 				D[row][col] = C[row][col];
-				for (int k = 0; k < 16; ++k) {
+				for (int k = 0; k < (m16n8k8 ? 8 : 16); ++k) {
 					D[row][col] = std::fma(A[row][k], B[k][col], D[row][col]);
+					if (halfAccumulator) {
+						D[row][col] = f16ToF32(toF16(D[row][col], instr.modifier));
+					}
 				}
 			}
 		}
 
 		for (int lane = 0; lane < 32; ++lane) {
-			const int threadID = warpStart + lane;
-			const int groupID = lane >> 2;
-			const int threadInGroup = lane & 3;
-			for (unsigned int i = 0; i < 4; ++i) {
-				const int row = groupID + (i >= 2 ? 8 : 0);
-				const int col = threadInGroup * 2 + (i & 1);
+			int threadID = warpStart + lane;
+			int groupID = lane >> 2;
+			int threadInGroup = lane & 3;
+			if (halfAccumulator) {
+				ir::PTXU32 packed[2] = {0, 0};
+				for (int i = 0; i < 4; ++i) {
+					int row = groupID + (i >= 2 ? 8 : 0);
+					int col = threadInGroup * 2 + (i & 1);
+					packed[i / 2] |= static_cast<ir::PTXU32>(
+						toF16(D[row][col], instr.modifier)) << (16 * (i & 1));
+				}
+				setRegAsB32(threadID, instr.d.array[0].reg, packed[0]);
+				setRegAsB32(threadID, instr.d.array[1].reg, packed[1]);
+			}
+			else for (int i = 0; i < 4; ++i) {
+				int row = groupID + (i >= 2 ? 8 : 0);
+				int col = threadInGroup * 2 + (i & 1);
 				setRegAsF32(threadID, instr.d.array[i].reg,
 					D[row][col]);
 			}
