@@ -422,6 +422,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Sured:      return "sured";      break;
 		case Sust:       return "sust";       break;
 		case Suq:        return "suq";        break;
+		case Szext:      return "szext";      break;
 		case TestP:      return "testp";      break;
 		case Tex:        return "tex";        break;
 		case Tld4:       return "tld4";       break;
@@ -2111,6 +2112,24 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			break;
 		}
+		case Szext: {
+			if( type != PTXOperand::u32 && type != PTXOperand::s32 ) {
+				return "szext instruction requires .u32 or .s32 type";
+			}
+			if( shiftMode != ShiftMode::Clamp && shiftMode != ShiftMode::Wrap ) {
+				return "szext instruction requires .clamp or .wrap mode";
+			}
+			if( !PTXOperand::valid( type, d.type ) ) {
+				return "invalid szext destination type " + PTXOperand::toString(d.type);
+			}
+			if( !PTXOperand::valid( type, a.type ) ) {
+				return "invalid szext source type " + PTXOperand::toString(a.type);
+			}
+			if( b.type != PTXOperand::u32 ) {
+				return "szext operand B must have .u32 type";
+			}
+			break;
+		}
 		case Sured: {
 			if (!(reductionOperation == ReductionAdd
 				|| reductionOperation == ReductionMin 
@@ -2727,6 +2746,11 @@ std::string ir::PTXInstruction::toString() const {
 			return guard() + "suq." + toString( surfaceQuery ) 
 				+ "." + PTXOperand::toString(type) + " " + d.toString() 
 				+ ", [" + a.toString() + "]";
+		}
+		case Szext: {
+			return guard() + "szext." + toString(shiftMode) + "."
+				+ PTXOperand::toString(type) + " " + d.toString() + ", "
+				+ a.toString() + ", " + b.toString();
 		}
 		case Sured: {
 			return guard() + "sured" + toString(formatMode) + "." 

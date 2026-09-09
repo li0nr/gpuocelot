@@ -93,6 +93,7 @@ namespace ir {
 			Sured,
 			Sust,
 			Suq,
+			Szext,
 			TestP,
 			Tex,
 			Tld4,

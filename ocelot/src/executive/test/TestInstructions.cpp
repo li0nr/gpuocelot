@@ -3214,6 +3214,57 @@ public:
 		return true;
 	}
 
+	bool test_Szext() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n"
+			<< ".target sm_86\n"
+			<< ".address_size 64\n"
+			<< ".visible .entry test_szext() {\n"
+			<< "  .reg .b32 rd;\n"
+			<< "  .reg .s32 ra;\n"
+			<< "  .reg .u32 rb;\n"
+			<< "  szext.clamp.s32 rd, ra, rb;\n"
+			<< "  szext.wrap.u32 rd, 0xffffffff, 0;\n"
+			<< "  ret;\n"
+			<< "}\n";
+		Module parsed;
+		try {
+			parsed.load(ptx);
+		}
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse PTX 8.0 szext examples: "
+				<< error.what() << "\n";
+			return false;
+		}
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Szext;
+		ins.type = PTXOperand::s32;
+		ins.shiftMode = PTXInstruction::ShiftMode::Clamp;
+		ins.d = reg("rd", PTXOperand::b32, 0);
+		ins.a = reg("ra", PTXOperand::s32, 1);
+		ins.b = reg("rb", PTXOperand::u32, 2);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU32(thread, 1, 0x80);
+			cta->setRegAsU32(thread, 2, 8);
+		}
+		cta->eval_Szext(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0xffffff80u) return false;
+		}
+
+		ins.type = PTXOperand::u32;
+		ins.shiftMode = PTXInstruction::ShiftMode::Wrap;
+		ins.a = imm_uint("a", PTXOperand::u32, 0xffffffffu);
+		ins.b = imm_uint("b", PTXOperand::u32, 0);
+		cta->eval_Szext(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0) return false;
+		}
+
+		return true;
+	}
+
 /*!
 		Tests several forms of the and instruction
 	*/
@@ -5148,6 +5199,7 @@ public:
 
 			// logical and shift instructions
 			result = (result && test_Fns());
+			result = (result && test_Szext());
 			result = (result && test_And());
 			result = (result && test_Or());
 			result = (result && test_Xor());

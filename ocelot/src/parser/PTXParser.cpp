@@ -167,6 +167,11 @@ namespace parser
 			if( instruction.c.addressMode == ir::PTXOperand::Immediate )
 				instruction.c.type = ir::PTXOperand::s32;
 		}
+		else if( instruction.opcode == ir::PTXInstruction::Szext
+			&& instruction.b.addressMode == ir::PTXOperand::Immediate )
+		{
+			instruction.b.type = ir::PTXOperand::u32;
+		}
 	}
 
 	void PTXParser::State::_setMovVectorImmediateTypes()
@@ -2686,6 +2691,7 @@ namespace parser
 		if( string == "sust" ) return ir::PTXInstruction::Sust;
 		if( string == "sured" ) return ir::PTXInstruction::Sured;
 		if( string == "suq" ) return ir::PTXInstruction::Suq;
+		if( string == "szext" ) return ir::PTXInstruction::Szext;
 		if( string == "tex" ) return ir::PTXInstruction::Tex;
 		if( string == "testp" ) return ir::PTXInstruction::TestP;
 		if( string == "tld4" ) return ir::PTXInstruction::Tld4;

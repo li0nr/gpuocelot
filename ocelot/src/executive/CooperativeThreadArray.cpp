@@ -642,6 +642,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Sub(context, instr); break;
 			case ir::PTXInstruction::SubC:
 				eval_SubC(context, instr); break;
+			case ir::PTXInstruction::Szext:
+				eval_Szext(context, instr); break;
 			case ir::PTXInstruction::TestP:
 				eval_TestP(context, instr); break;
 			case ir::PTXInstruction::Tex:
@@ -10049,6 +10051,28 @@ void executive::CooperativeThreadArray::eval_Trap(CTAContext &context, const ir:
 void executive::CooperativeThreadArray::eval_Suq(CTAContext &context, const ir::PTXInstruction &instr) {
 	// this instruction is identical to txq except for surfaces which we don't distinguish from textures
 	eval_Txq(context, instr);
+}
+
+void executive::CooperativeThreadArray::eval_Szext(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+
+		const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+		const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+		const ir::PTXU32 b1 = b & 0x1f;
+		const bool tooLarge = b >= 32
+			&& instr.shiftMode == ir::PTXInstruction::ShiftMode::Clamp;
+		const ir::PTXU32 mask = tooLarge ? 0 : (~0u << b1);
+		const ir::PTXU32 signPos = (b1 - 1) & 0x1f;
+		const bool signBit = b1 != 0 && !tooLarge
+			&& instr.type == ir::PTXOperand::s32
+			&& ((a >> signPos) & 1u);
+		const ir::PTXU32 d = (a & ~mask) | (signBit ? mask : 0);
+
+		setRegAsU32(threadID, instr.d.reg, d);
+	}
 }
 
 void executive::CooperativeThreadArray::eval_Txq(CTAContext &context, const ir::PTXInstruction &instr) {

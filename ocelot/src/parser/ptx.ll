@@ -240,6 +240,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_SURED; }
 "suq"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_SUQ; }
+"szext"                         { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_SZEXT; }
 "testp"                         { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_TESTP; }
 "tex"                           { sstrcpy( yylval->text, yytext, 1024 ); \

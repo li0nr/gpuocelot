@@ -58,7 +58,7 @@
 %token<text> OPCODE_MAD OPCODE_MADC OPCODE_SET OPCODE_SETP OPCODE_SELP 
 %token<text> OPCODE_SLCT OPCODE_MOV OPCODE_ST OPCODE_CVT OPCODE_AND OPCODE_XOR 
 %token<text> OPCODE_OR OPCODE_CVTA OPCODE_ISSPACEP OPCODE_LDU
-%token<text> OPCODE_SULD OPCODE_TXQ OPCODE_SUST OPCODE_SURED OPCODE_SUQ
+%token<text> OPCODE_SULD OPCODE_TXQ OPCODE_SUST OPCODE_SURED OPCODE_SUQ OPCODE_SZEXT
 %token<text> OPCODE_BRA OPCODE_CALL OPCODE_RET OPCODE_EXIT OPCODE_TRAP 
 %token<text> OPCODE_BRKPT OPCODE_SUBC OPCODE_TEX OPCODE_LD OPCODE_BARSYNC
 %token<text> OPCODE_ATOM OPCODE_RED OPCODE_NOT OPCODE_CNOT OPCODE_VOTE
@@ -684,7 +684,7 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_BRA | OPCODE_CALL | OPCODE_RET | OPCODE_EXIT | OPCODE_TRAP 
 	| OPCODE_BRKPT | OPCODE_SUBC | OPCODE_TEX | OPCODE_LD | OPCODE_LDU
 	| OPCODE_BARSYNC | OPCODE_SULD | OPCODE_TXQ | OPCODE_SUST | OPCODE_SURED 
-	| OPCODE_SUQ | OPCODE_ATOM | OPCODE_RED | OPCODE_NOT | OPCODE_CNOT
+	| OPCODE_SUQ | OPCODE_SZEXT | OPCODE_ATOM | OPCODE_RED | OPCODE_NOT | OPCODE_CNOT
 	| OPCODE_VOTE | OPCODE_SHR | OPCODE_SHL | OPCODE_MEMBAR | OPCODE_FMA
 	| OPCODE_PMEVENT | OPCODE_POPC | OPCODE_CLZ | OPCODE_BFIND | OPCODE_BREV
 	| OPCODE_BFI | OPCODE_FNS | OPCODE_TESTP | OPCODE_TLD4
@@ -873,7 +873,7 @@ instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2
 	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | exit
 	| fns | ld | ldu | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
-	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust
+	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust | szext
 	| testp | tex | tld4 | trap | txq | vote | shfl | shf;
 
 basicInstruction3Opcode : OPCODE_AND | OPCODE_OR | OPCODE_SHF 
@@ -1497,6 +1497,12 @@ shf : OPCODE_SHF shfDirection shfMode TOKEN_B32 operand ',' operand ',' operand 
     state.shiftDirection( $<value>2 );
     state.shiftMode( $<value>3 );
 }; 
+
+szext : OPCODE_SZEXT shfMode dataType operand ',' operand ',' operand ';'
+{
+	state.instruction( $<text>1, $<value>3 );
+	state.shiftMode( $<value>2 );
+};
 
 shuffleModifierId : TOKEN_UP | TOKEN_DOWN | TOKEN_BFLY | TOKEN_IDX;
 

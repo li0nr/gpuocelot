@@ -522,6 +522,7 @@ namespace executive {
 		void eval_Sured(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Sust(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Suq(CTAContext &context, const ir::PTXInstruction &instr);
+		void eval_Szext(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_TestP(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Tex(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Trap(CTAContext &context, const ir::PTXInstruction &instr);
