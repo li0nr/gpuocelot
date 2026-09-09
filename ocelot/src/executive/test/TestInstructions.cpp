@@ -3177,6 +3177,43 @@ public:
 	//
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 
+	bool test_Fns() {
+		struct Case {
+			PTXU32 base;
+			PTXS32 offset;
+			PTXU32 expected;
+		};
+		const Case cases[] = {
+			{3,  1, 3},
+			{3, -1, 3},
+			{2,  1, 3},
+			{2, -1, 1}
+		};
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Fns;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("d", PTXOperand::b32, 0);
+		ins.a = imm_uint("mask", PTXOperand::b32, 0xaaaaaaaau);
+
+		for (const Case& test : cases) {
+			ins.b = imm_uint("base", PTXOperand::b32, test.base);
+			ins.c = imm_int("offset", PTXOperand::s32, test.offset);
+			cta->eval_Fns(cta->getActiveContext(), ins);
+
+			for (int thread = 0; thread < threadCount; ++thread) {
+				PTXU32 actual = cta->getRegAsB32(thread, ins.d.reg);
+				if (actual != test.expected) {
+					status << "fns.b32 failed for base " << test.base
+						<< ", offset " << test.offset << ": expected "
+						<< test.expected << ", got " << actual << "\n";
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 /*!
 		Tests several forms of the and instruction
 	*/
@@ -5110,6 +5147,7 @@ public:
 			}
 
 			// logical and shift instructions
+			result = (result && test_Fns());
 			result = (result && test_And());
 			result = (result && test_Or());
 			result = (result && test_Xor());

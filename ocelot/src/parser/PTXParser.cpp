@@ -162,6 +162,11 @@ namespace parser
 			if ( instruction.c.addressMode == ir::PTXOperand::AddressMode::Immediate)
 				instruction.c.type = ir::PTXOperand::u32;
 		}
+		else if( instruction.opcode == ir::PTXInstruction::Fns )
+		{
+			if( instruction.c.addressMode == ir::PTXOperand::Immediate )
+				instruction.c.type = ir::PTXOperand::s32;
+		}
 	}
 
 	void PTXParser::State::_setMovVectorImmediateTypes()
@@ -2637,6 +2642,7 @@ namespace parser
 		if( string == "ex2" ) return ir::PTXInstruction::Ex2;
 		if( string == "exit" ) return ir::PTXInstruction::Exit;
 		if( string == "fma" ) return ir::PTXInstruction::Fma;
+		if( string == "fns" ) return ir::PTXInstruction::Fns;
 		if( string == "isspacep" ) return ir::PTXInstruction::Isspacep;
 		if( string == "ld" ) return ir::PTXInstruction::Ld;
 		if( string == "ldu" ) return ir::PTXInstruction::Ldu;

@@ -376,6 +376,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Ex2:        return "ex2";        break;
 		case Exit:       return "exit";       break;
 		case Fma:        return "fma";        break;
+		case Fns:        return "fns";        break;
 		case Isspacep:   return "isspacep";   break;
 		case Ld:         return "ld";         break;
 		case Ldu:        return "ldu";        break;
@@ -954,6 +955,28 @@ std::string ir::PTXInstruction::valid() const {
 			if( !PTXOperand::valid( type, d.type )  ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
+			}
+			break;
+		}
+		case Fns: {
+			if( type != PTXOperand::b32 ) {
+				return "fns instruction only supports .b32 type";
+			}
+			if( d.type != PTXOperand::b32 ) {
+				return "fns destination operand must have .b32 type";
+			}
+			if( a.bytes() != 4 ) {
+				return "fns mask operand must be 32-bit";
+			}
+			if( b.type != PTXOperand::b32 && b.type != PTXOperand::u32
+				&& b.type != PTXOperand::s32 ) {
+				return "fns base operand must have .b32, .u32, or .s32 type";
+			}
+			if( c.type != PTXOperand::s32 ) {
+				return "fns offset operand must have .s32 type";
+			}
+			if( b.addressMode == PTXOperand::Immediate && b.imm_uint > 31 ) {
+				return "fns base operand must be between 0 and 31";
 			}
 			break;
 		}
@@ -2385,6 +2408,10 @@ std::string ir::PTXInstruction::toString() const {
 				+ PTXOperand::toString(type) + " " + d.toString() + ", "
 				+ a.toString() + ", " + b.toString() + ", " + c.toString();
 			return result;
+		}
+		case Fns: {
+			return guard() + "fns.b32 " + d.toString() + ", " + a.toString()
+				+ ", " + b.toString() + ", " + c.toString();
 		}
 		case Isspacep: {
 			std::string result = guard() + "isspacep." + toString(addressSpace) 

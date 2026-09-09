@@ -148,6 +148,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_EXIT; }
 "fma"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_FMA; }
+"fns"                           { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_FNS; }
 "isspacep"                      { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_ISSPACEP; }
 "ld"                            { sstrcpy( yylval->text, yytext, 1024 ); \

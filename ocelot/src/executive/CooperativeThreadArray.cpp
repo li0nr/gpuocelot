@@ -562,6 +562,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Exit(context, instr); break;
 			case ir::PTXInstruction::Fma:
 				eval_Fma(context, instr); break;
+			case ir::PTXInstruction::Fns:
+				eval_Fns(context, instr); break;
 			case ir::PTXInstruction::Mma:
 				eval_Mma(context, instr); break;
 			case ir::PTXInstruction::Isspacep:
@@ -2909,6 +2911,42 @@ void executive::CooperativeThreadArray::eval_CNot(CTAContext &context,
 	}
 	else {
 		throw RuntimeException("unsupported data type", context.PC, instr);
+	}
+}
+
+void executive::CooperativeThreadArray::eval_Fns(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+
+		const ir::PTXU32 mask = operandAsB32(threadID, instr.a);
+		const ir::PTXU32 base = operandAsB32(threadID, instr.b);
+		const ir::PTXS32 offset = operandAsS32(threadID, instr.c);
+		ir::PTXU32 result = 0xffffffffu;
+		if (base > 31) {
+			report("warning: fns base outside 0..31 is undefined by PTX; "
+				"Ocelot returns 0xffffffff");
+		}
+		else if (offset == 0) {
+			if ((mask >> base) & 1u) result = base;
+		}
+		else {
+			int pos = static_cast<int>(base);
+			ir::PTXS64 count = std::abs(static_cast<ir::PTXS64>(offset)) - 1;
+			const int inc = offset > 0 ? 1 : -1;
+			while (pos >= 0 && pos < 32) {
+				if ((mask >> pos) & 1u) {
+					if (count == 0) {
+						result = pos;
+						break;
+					}
+					--count;
+				}
+				pos += inc;
+			}
+		}
+		setRegAsB32(threadID, instr.d.reg, result);
 	}
 }
 

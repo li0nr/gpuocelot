@@ -64,7 +64,7 @@
 %token<text> OPCODE_ATOM OPCODE_RED OPCODE_NOT OPCODE_CNOT OPCODE_VOTE
 %token<text> OPCODE_SHR OPCODE_SHL OPCODE_FMA OPCODE_MEMBAR OPCODE_PMEVENT
 %token<text> OPCODE_POPC OPCODE_PRMT OPCODE_CLZ OPCODE_BFIND OPCODE_BREV 
-%token<text> OPCODE_BFI OPCODE_BFE OPCODE_TESTP OPCODE_TLD4 OPCODE_BAR
+%token<text> OPCODE_BFI OPCODE_BFE OPCODE_FNS OPCODE_TESTP OPCODE_TLD4 OPCODE_BAR
 %token<text> OPCODE_PREFETCH OPCODE_PREFETCHU OPCODE_SHFL OPCODE_SHF
 %token<text> OPCODE_MMA
 
@@ -687,7 +687,7 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_SUQ | OPCODE_ATOM | OPCODE_RED | OPCODE_NOT | OPCODE_CNOT
 	| OPCODE_VOTE | OPCODE_SHR | OPCODE_SHL | OPCODE_MEMBAR | OPCODE_FMA
 	| OPCODE_PMEVENT | OPCODE_POPC | OPCODE_CLZ | OPCODE_BFIND | OPCODE_BREV
-	| OPCODE_BFI | OPCODE_TESTP | OPCODE_TLD4
+	| OPCODE_BFI | OPCODE_FNS | OPCODE_TESTP | OPCODE_TLD4
 	| OPCODE_PREFETCH | OPCODE_PREFETCHU;
 
 mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
@@ -871,7 +871,7 @@ optionalFloatRounding : floatRounding | /* empty string */;
 instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2 
 	| basicInstruction3 | bfe | bfi | bfind | brev | branch | addOrSub
 	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | exit
-	| ld | ldu | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
+	| fns | ld | ldu | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
 	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust
 	| testp | tex | tld4 | trap | txq | vote | shfl | shf;
@@ -1110,6 +1110,11 @@ brkpt : OPCODE_BRKPT ';'
 };
 
 clz : OPCODE_CLZ dataType operand ',' operand ';'
+{
+	state.instruction( $<text>1, $<value>2 );
+};
+
+fns : OPCODE_FNS TOKEN_B32 operand ',' operand ',' operand ',' operand ';'
 {
 	state.instruction( $<text>1, $<value>2 );
 };

@@ -47,6 +47,7 @@ namespace ir {
 			Ex2,
 			Exit,
 			Fma,
+			Fns,
 			Isspacep,
 			Ld,
 			Ldu,
