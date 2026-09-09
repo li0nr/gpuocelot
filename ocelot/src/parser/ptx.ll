@@ -120,6 +120,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_BFE; }
 "bfind"                         { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_BFIND; }
+"bmsk"                          { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_BMSK; }
 "bra"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_BRA; }
 "brev"                          { sstrcpy( yylval->text, yytext, 1024 ); \

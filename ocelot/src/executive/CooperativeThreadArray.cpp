@@ -532,6 +532,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Bfi(context, instr); break;
 			case ir::PTXInstruction::Bfind:
 				eval_Bfind(context, instr); break;
+			case ir::PTXInstruction::Bmsk:
+				eval_Bmsk(context, instr); break;
 			case ir::PTXInstruction::Bfe:
 				eval_Bfe(context, instr); break;
 			case ir::PTXInstruction::Bra:
@@ -2407,6 +2409,31 @@ void executive::CooperativeThreadArray::eval_Bfind(CTAContext &context,
 	default: {
 		throw RuntimeException("unsupported data type", context.PC, instr);
 	}
+	}
+}
+
+void executive::CooperativeThreadArray::eval_Bmsk(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+
+		const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+		const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+		const ir::PTXU32 a1 = a & 0x1f;
+		const ir::PTXU32 b1 = b & 0x1f;
+		const ir::PTXU32 sum = a1 + b1;
+		const bool positionOverflow = instr.shiftMode ==
+			ir::PTXInstruction::ShiftMode::Clamp && a >= 32;
+		const bool widthOverflow = instr.shiftMode ==
+			ir::PTXInstruction::ShiftMode::Clamp && b >= 32;
+		const ir::PTXU32 mask0 = positionOverflow ? 0 : (~0u << a1);
+		ir::PTXU32 mask1 = 0;
+		if (sum < 32 && !positionOverflow && !widthOverflow) {
+			mask1 = b1 == 0 ? ~0u : (~0u << sum);
+		}
+
+		setRegAsU32(threadID, instr.d.reg, mask0 & ~mask1);
 	}
 }
 

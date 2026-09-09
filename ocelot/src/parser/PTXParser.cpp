@@ -2633,6 +2633,7 @@ namespace parser
 		if( string == "bfe" ) return ir::PTXInstruction::Bfe;
 		if( string == "bfi" ) return ir::PTXInstruction::Bfi;
 		if( string == "bfind" ) return ir::PTXInstruction::Bfind;
+		if( string == "bmsk" ) return ir::PTXInstruction::Bmsk;
 		if( string == "bra" ) return ir::PTXInstruction::Bra;
 		if( string == "brev" ) return ir::PTXInstruction::Brev;
 		if( string == "brkpt" ) return ir::PTXInstruction::Brkpt;

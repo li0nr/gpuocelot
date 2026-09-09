@@ -362,6 +362,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Bfe:        return "bfe";        break;
 		case Bfi:        return "bfi";        break;
 		case Bfind:      return "bfind";      break;
+		case Bmsk:       return "bmsk";       break;
 		case Bra:        return "bra";        break;
 		case Brev:       return "brev";       break;
 		case Brkpt:      return "brkpt";      break;
@@ -697,6 +698,20 @@ std::string ir::PTXInstruction::valid() const {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " 
 					+ PTXOperand::toString( PTXOperand::u32 );
+			}
+			break;
+		}
+		case Bmsk: {
+			if( type != PTXOperand::b32 ) {
+				return "bmsk instruction requires .b32 type";
+			}
+			if( shiftMode != ShiftMode::Clamp && shiftMode != ShiftMode::Wrap ) {
+				return "bmsk instruction requires .clamp or .wrap mode";
+			}
+			if( !PTXOperand::valid( type, d.type )
+				|| !PTXOperand::valid( type, a.type )
+				|| !PTXOperand::valid( type, b.type ) ) {
+				return "bmsk operands must have 32-bit integer types";
 			}
 			break;
 		}
@@ -2290,6 +2305,10 @@ std::string ir::PTXInstruction::toString() const {
 			result += PTXOperand::toString( type ) + " " 
 				+ d.toString() + ", " + a.toString();
 			return result;
+		}
+		case Bmsk: {
+			return guard() + "bmsk." + toString(shiftMode) + ".b32 "
+				+ d.toString() + ", " + a.toString() + ", " + b.toString();
 		}
 		case Bra: {
 			std::string result = guard() + "bra";

@@ -3265,6 +3265,54 @@ public:
 		return true;
 	}
 
+	bool test_Bmsk() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n"
+			<< ".target sm_86\n"
+			<< ".address_size 64\n"
+			<< ".visible .entry test_bmsk() {\n"
+			<< "  .reg .b32 rd, ra, rb;\n"
+			<< "  bmsk.clamp.b32 rd, ra, rb;\n"
+			<< "  bmsk.wrap.b32 rd, 1, 2;\n"
+			<< "  ret;\n"
+			<< "}\n";
+		Module parsed;
+		try {
+			parsed.load(ptx);
+		}
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse PTX 8.0 bmsk examples: "
+				<< error.what() << "\n";
+			return false;
+		}
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Bmsk;
+		ins.type = PTXOperand::b32;
+		ins.shiftMode = PTXInstruction::ShiftMode::Clamp;
+		ins.d = reg("rd", PTXOperand::b32, 0);
+		ins.a = reg("ra", PTXOperand::b32, 1);
+		ins.b = reg("rb", PTXOperand::b32, 2);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU32(thread, 1, 1);
+			cta->setRegAsU32(thread, 2, 2);
+		}
+		cta->eval_Bmsk(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0x00000006u) return false;
+		}
+
+		ins.shiftMode = PTXInstruction::ShiftMode::Wrap;
+		ins.a = imm_uint("a", PTXOperand::b32, 1);
+		ins.b = imm_uint("b", PTXOperand::b32, 2);
+		cta->eval_Bmsk(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0x00000006u) return false;
+		}
+
+		return true;
+	}
+
 /*!
 		Tests several forms of the and instruction
 	*/
@@ -5200,6 +5248,7 @@ public:
 			// logical and shift instructions
 			result = (result && test_Fns());
 			result = (result && test_Szext());
+			result = (result && test_Bmsk());
 			result = (result && test_And());
 			result = (result && test_Or());
 			result = (result && test_Xor());

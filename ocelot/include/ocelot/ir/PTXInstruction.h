@@ -33,6 +33,7 @@ namespace ir {
 			Bfe,
 			Bfi,
 			Bfind,
+			Bmsk,
 			Bra,
 			Brev,
 			Brkpt,
