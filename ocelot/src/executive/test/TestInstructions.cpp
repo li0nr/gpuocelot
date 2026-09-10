@@ -2646,6 +2646,43 @@ public:
 
 		return result;
 	}
+
+	bool test_Tanh() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_tanh() {\n"
+			<< "  .reg .f32 d, a;\n"
+			<< "  tanh.approx.f32 d, a;\n  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse tanh example: " << error.what() << "\n";
+			return false;
+		}
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Tanh;
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::approx;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::f32, 1);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			const PTXF32 input = (thread - threadCount / 2) / 4.0f;
+			cta->setRegAsF32(thread, 1, input);
+		}
+		cta->eval_Tanh(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			const PTXF32 input = (thread - threadCount / 2) / 4.0f;
+			if (std::fabs(cta->getRegAsF32(thread, 0) - std::tanh(input)) > 1e-6f)
+				return false;
+		}
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 1, subnormal);
+		cta->setRegAsF32(1, 1, -subnormal);
+		cta->eval_Tanh(cta->getActiveContext(), ins);
+		return cta->getRegAsF32(0, 0) == subnormal
+			&& cta->getRegAsF32(1, 0) == -subnormal;
+	}
 	
 	bool test_CopySign() {
 		bool result = true;
@@ -5353,6 +5390,7 @@ public:
 			// floating-point instructions
 			result = (result && test_Cos());
 			result = (result && test_Sin());
+			result = (result && test_Tanh());
 			result = (result && test_Ex2());
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());

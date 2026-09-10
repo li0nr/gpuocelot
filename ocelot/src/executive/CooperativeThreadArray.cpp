@@ -651,6 +651,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_SubC(context, instr); break;
 			case ir::PTXInstruction::Szext:
 				eval_Szext(context, instr); break;
+			case ir::PTXInstruction::Tanh:
+				eval_Tanh(context, instr); break;
 			case ir::PTXInstruction::TestP:
 				eval_TestP(context, instr); break;
 			case ir::PTXInstruction::Tex:
@@ -9476,6 +9478,18 @@ void executive::CooperativeThreadArray::eval_Sust(CTAContext &context,
 /*!
 
 */
+void executive::CooperativeThreadArray::eval_Tanh(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+		const ir::PTXF32 a = operandAsF32(threadID, instr.a);
+		const ir::PTXF32 d = std::fpclassify(a) == FP_SUBNORMAL
+			? a : std::tanh(a);
+		setRegAsF32(threadID, instr.d.reg, d);
+	}
+}
+
 void executive::CooperativeThreadArray::eval_TestP(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();

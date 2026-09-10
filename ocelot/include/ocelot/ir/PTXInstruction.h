@@ -98,6 +98,7 @@ namespace ir {
 			Sust,
 			Suq,
 			Szext,
+			Tanh,
 			TestP,
 			Tex,
 			Tld4,

@@ -2735,6 +2735,7 @@ namespace parser
 		if( string == "sured" ) return ir::PTXInstruction::Sured;
 		if( string == "suq" ) return ir::PTXInstruction::Suq;
 		if( string == "szext" ) return ir::PTXInstruction::Szext;
+		if( string == "tanh" ) return ir::PTXInstruction::Tanh;
 		if( string == "tex" ) return ir::PTXInstruction::Tex;
 		if( string == "testp" ) return ir::PTXInstruction::TestP;
 		if( string == "tld4" ) return ir::PTXInstruction::Tld4;

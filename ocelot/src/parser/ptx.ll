@@ -250,6 +250,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_SUQ; }
 "szext"                         { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_SZEXT; }
+"tanh"                          { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_TANH; }
 "testp"                         { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_TESTP; }
 "tex"                           { sstrcpy( yylval->text, yytext, 1024 ); \

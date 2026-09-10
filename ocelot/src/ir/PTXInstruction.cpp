@@ -427,6 +427,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Sust:       return "sust";       break;
 		case Suq:        return "suq";        break;
 		case Szext:      return "szext";      break;
+		case Tanh:       return "tanh";       break;
 		case TestP:      return "testp";      break;
 		case Tex:        return "tex";        break;
 		case Tld4:       return "tld4";       break;
@@ -2088,6 +2089,16 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			break;
 		}
+		case Tanh: {
+			if( type != PTXOperand::f32 || modifier != approx ) {
+				return "tanh instruction requires exactly .approx.f32";
+			}
+			if( !PTXOperand::valid(type, a.type)
+				|| !PTXOperand::valid(type, d.type) ) {
+				return "tanh operands must have compatible f32 types";
+			}
+			break;
+		}
 		case TestP: {
 			if( !( type == PTXOperand::f32 || type == PTXOperand::f64 ) ) {
 				return "invalid instruction type " 
@@ -2853,6 +2864,11 @@ std::string ir::PTXInstruction::toString() const {
 				+ ((vec != Vec::v1)?toString(vec) + ".":"") + PTXOperand::toString(type) 
 				+ toString(clamp) + " [" + d.toString() +", " + a.toString() 
 				+ "], " + b.toString();
+		}
+		case Tanh: {
+			return guard() + "tanh." + modifierString(modifier)
+				+ PTXOperand::toString(type) + " " + d.toString() + ", "
+				+ a.toString();
 		}
 		case TestP: {
 			return guard() + "testp." + toString( floatingPointMode ) 
