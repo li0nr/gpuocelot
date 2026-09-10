@@ -3170,6 +3170,56 @@ public:
 		return result;
 	}
 
+	bool test_Dp() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_dp() {\n"
+			<< "  .reg .b32 d0, a0, b0, c0;\n"
+			<< "  dp4a.u32.u32 d0, a0, b0, c0;\n"
+			<< "  dp4a.u32.s32 d0, a0, b0, c0;\n"
+			<< "  dp2a.lo.u32.u32 d0, a0, b0, c0;\n"
+			<< "  dp2a.hi.u32.s32 d0, a0, b0, c0;\n  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse dp2a/dp4a examples: " << error.what() << "\n";
+			return false;
+		}
+
+		struct Case {
+			PTXInstruction::Opcode opcode;
+			PTXOperand::DataType aType, bType;
+			unsigned int mode;
+			PTXU32 a, b, c, expected;
+		};
+		const Case cases[] = {
+			{PTXInstruction::Dp4a, PTXOperand::u32, PTXOperand::u32, 0,
+				0x04030201u, 0x08070605u, 10, 80},
+			{PTXInstruction::Dp4a, PTXOperand::u32, PTXOperand::s32, 0,
+				0x04030201u, 0xfcfdfeffu, 10, 0xffffffecu},
+			{PTXInstruction::Dp2a, PTXOperand::u32, PTXOperand::u32, PTXInstruction::lo,
+				0x00030002u, 0x64640504u, 1, 24},
+			{PTXInstruction::Dp2a, PTXOperand::s32, PTXOperand::u32, PTXInstruction::hi,
+				0x0003fffeu, 0x05040000u, 1, 8}
+		};
+		PTXInstruction ins;
+		ins.d = reg("d", PTXOperand::b32, 0);
+		for (const Case& test : cases) {
+			ins.opcode = test.opcode;
+			ins.type = test.aType;
+			ins.bType = test.bType;
+			ins.modifier = test.mode;
+			ins.a = imm_uint("a", test.aType, test.a);
+			ins.b = imm_uint("b", test.bType, test.b);
+			ins.c = imm_uint("c", PTXOperand::b32, test.c);
+			cta->eval_Dp(cta->getActiveContext(), ins);
+			for (int thread = 0; thread < threadCount; ++thread) {
+				if (cta->getRegAsU32(thread, 0) != test.expected) return false;
+			}
+		}
+		return true;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	//
 	//
@@ -5295,6 +5345,7 @@ public:
 			result = (result && test_Mul());
 			result = (result && test_AddC());
 			result = (result && test_SubC());
+			result = (result && test_Dp());
 			if (prolix && result) {
 				status << "pass: exotic arithmetic instructions\n";
 			}

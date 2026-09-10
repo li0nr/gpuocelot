@@ -558,6 +558,9 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Cvta(context, instr); break;
 			case ir::PTXInstruction::Div:
 				eval_Div(context, instr); break;
+			case ir::PTXInstruction::Dp2a:
+			case ir::PTXInstruction::Dp4a:
+				eval_Dp(context, instr); break;
 			case ir::PTXInstruction::Ex2:
 				eval_Ex2(context, instr); break;
 			case ir::PTXInstruction::Exit:
@@ -4631,6 +4634,36 @@ void executive::CooperativeThreadArray::eval_Div(CTAContext &context,
 	}
 	else {
 		throw RuntimeException("unsupported data type", context.PC, instr);
+	}
+}
+
+void executive::CooperativeThreadArray::eval_Dp(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	const bool fourWay = instr.opcode == ir::PTXInstruction::Dp4a;
+	const unsigned int lanes = fourWay ? 4 : 2;
+	const unsigned int aWidth = fourWay ? 8 : 16;
+	const unsigned int bStart = !fourWay
+		&& instr.modifier == ir::PTXInstruction::hi ? 2 : 0;
+	auto extract = [](ir::PTXU32 value, unsigned int bit,
+		unsigned int width, ir::PTXOperand::DataType type) {
+		const ir::PTXU32 field = (value >> bit) & ((1u << width) - 1);
+		if( type == ir::PTXOperand::s32 && (field & (1u << (width - 1))) ) {
+			return static_cast<ir::PTXS32>(field) - (1 << width);
+		}
+		return static_cast<ir::PTXS32>(field);
+	};
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+		const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+		const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+		ir::PTXU32 d = operandAsU32(threadID, instr.c);
+		for (unsigned int i = 0; i < lanes; ++i) {
+			const ir::PTXS32 va = extract(a, i * aWidth, aWidth, instr.type);
+			const ir::PTXS32 vb = extract(b, (bStart + i) * 8, 8, instr.bType);
+			d += static_cast<ir::PTXU32>(va * vb);
+		}
+		setRegAsU32(threadID, instr.d.reg, d);
 	}
 }
 

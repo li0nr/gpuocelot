@@ -1940,6 +1940,22 @@ namespace parser
 		instruction( opcode, TOKEN_B64 );
 	}
 
+	void PTXParser::State::dotType( int token )
+	{
+		ir::PTXInstruction& instruction = statement.instruction;
+		instruction.bType = tokenToDataType( token );
+		if( instruction.b.addressMode == ir::PTXOperand::Immediate ) {
+			instruction.b.type = instruction.bType;
+		}
+		const ir::PTXOperand::DataType resultType =
+			instruction.type == ir::PTXOperand::u32
+			&& instruction.bType == ir::PTXOperand::u32
+			? ir::PTXOperand::u32 : ir::PTXOperand::s32;
+		if( instruction.c.addressMode == ir::PTXOperand::Immediate ) {
+			instruction.c.type = resultType;
+		}
+	}
+
 	void PTXParser::State::lop3()
 	{
 		assert( operandVector.size() == 6 || operandVector.size() == 8 );
@@ -2668,6 +2684,8 @@ namespace parser
 		if( string == "cvt" ) return ir::PTXInstruction::Cvt;
 		if( string == "cvta" ) return ir::PTXInstruction::Cvta;
 		if( string == "div" ) return ir::PTXInstruction::Div;
+		if( string == "dp2a" ) return ir::PTXInstruction::Dp2a;
+		if( string == "dp4a" ) return ir::PTXInstruction::Dp4a;
 		if( string == "ex2" ) return ir::PTXInstruction::Ex2;
 		if( string == "exit" ) return ir::PTXInstruction::Exit;
 		if( string == "fma" ) return ir::PTXInstruction::Fma;

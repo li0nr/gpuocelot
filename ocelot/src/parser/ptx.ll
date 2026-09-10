@@ -144,6 +144,10 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_CVTA; }
 "div"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_DIV; }
+"dp2a"                          { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_DP2A; }
+"dp4a"                          { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_DP4A; }
 "ex2"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_EX2; }
 "exit"                          { sstrcpy( yylval->text, yytext, 1024 ); \

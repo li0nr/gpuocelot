@@ -45,6 +45,8 @@ namespace ir {
 			Cvt,
 			Cvta,
 			Div,
+			Dp2a,
+			Dp4a,
 			Ex2,
 			Exit,
 			Fma,
@@ -436,6 +438,8 @@ namespace ir {
 
 		/*! indicates data type of instruction */
 		PTXOperand::DataType type;
+		/*! Second input type for packed dot-product instructions */
+		PTXOperand::DataType bType;
 
 		/*! Shape for MMA instructions */
 		MmaShape mmaShape;

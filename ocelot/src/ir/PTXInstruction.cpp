@@ -374,6 +374,8 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Cvt:        return "cvt";        break;
 		case Cvta:       return "cvta";       break;
 		case Div:        return "div";        break;
+		case Dp2a:       return "dp2a";       break;
+		case Dp4a:       return "dp4a";       break;
 		case Ex2:        return "ex2";        break;
 		case Exit:       return "exit";       break;
 		case Fma:        return "fma";        break;
@@ -459,6 +461,7 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	: opcode(op), d(_d), a(_a), b(_b), c(_c) {
 	ISA = Instruction::PTX;
 	type = PTXOperand::s32;
+	bType = PTXOperand::TypeSpecifier_invalid;
 	modifier = 0;
 	reconvergeInstruction = 0;
 	branchTargetInstruction = 0;
@@ -963,6 +966,25 @@ std::string ir::PTXInstruction::valid() const {
 					return toString( ftz ) 
 						+ " only valid for float point instructions.";
 				}
+			}
+			break;
+		}
+		case Dp2a:
+		case Dp4a: {
+			if( (type != PTXOperand::u32 && type != PTXOperand::s32)
+				|| (bType != PTXOperand::u32 && bType != PTXOperand::s32) ) {
+				return "dp2a/dp4a type qualifiers must be .u32 or .s32";
+			}
+			if( opcode == Dp2a && modifier != lo && modifier != hi ) {
+				return "dp2a instruction requires .lo or .hi mode";
+			}
+			const PTXOperand::DataType resultType = type == PTXOperand::u32
+				&& bType == PTXOperand::u32 ? PTXOperand::u32 : PTXOperand::s32;
+			if( !PTXOperand::valid(type, a.type)
+				|| !PTXOperand::valid(bType, b.type)
+				|| !PTXOperand::valid(resultType, c.type)
+				|| !PTXOperand::valid(resultType, d.type) ) {
+				return "dp2a/dp4a operands must have compatible 32-bit integer types";
 			}
 			break;
 		}
@@ -2468,6 +2490,14 @@ std::string ir::PTXInstruction::toString() const {
 			result += PTXOperand::toString( type ) + " " + d.toString() + ", " 
 				+ a.toString() + ", " + b.toString();
 			return result;
+		}
+		case Dp2a:
+		case Dp4a: {
+			std::string result = guard() + toString(opcode) + ".";
+			if( opcode == Dp2a ) result += modifierString(modifier);
+			return result + PTXOperand::toString(type) + "."
+				+ PTXOperand::toString(bType) + " " + d.toString() + ", "
+				+ a.toString() + ", " + b.toString() + ", " + c.toString();
 		}
 		case Ex2: {
 			std::string result = guard() + "ex2.";

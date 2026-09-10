@@ -54,7 +54,7 @@
 %token<text> OPCODE_COPYSIGN OPCODE_COS OPCODE_SQRT OPCODE_ADD OPCODE_RSQRT
 %token<text> OPCODE_MUL OPCODE_SAD OPCODE_SUB OPCODE_EX2 OPCODE_LG2 OPCODE_ADDC
 %token<text> OPCODE_RCP OPCODE_SIN OPCODE_REM OPCODE_MUL24 OPCODE_MAD24
-%token<text> OPCODE_DIV OPCODE_ABS OPCODE_NEG OPCODE_MIN OPCODE_MAX
+%token<text> OPCODE_DIV OPCODE_DP2A OPCODE_DP4A OPCODE_ABS OPCODE_NEG OPCODE_MIN OPCODE_MAX
 %token<text> OPCODE_MAD OPCODE_MADC OPCODE_SET OPCODE_SETP OPCODE_SELP 
 %token<text> OPCODE_SLCT OPCODE_MOV OPCODE_ST OPCODE_CVT OPCODE_AND OPCODE_XOR 
 %token<text> OPCODE_OR OPCODE_LOP3 OPCODE_CVTA OPCODE_ISSPACEP OPCODE_LDU
@@ -676,7 +676,7 @@ initializable : externOrVisible initializableAddress
 opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_MUL | OPCODE_SAD | OPCODE_SUB | OPCODE_EX2 | OPCODE_LG2
 	| OPCODE_RCP | OPCODE_SIN | OPCODE_REM | OPCODE_MUL24 | OPCODE_MAD24
-	| OPCODE_DIV | OPCODE_ABS | OPCODE_NEG | OPCODE_MIN | OPCODE_MAX
+	| OPCODE_DIV | OPCODE_DP2A | OPCODE_DP4A | OPCODE_ABS | OPCODE_NEG | OPCODE_MIN | OPCODE_MAX
 	| OPCODE_MAD | OPCODE_MADC | OPCODE_SET | OPCODE_SETP | OPCODE_SELP
 	| OPCODE_SLCT | OPCODE_MOV | OPCODE_ST | OPCODE_COPYSIGN | OPCODE_SHFL
 	| OPCODE_SHF | OPCODE_CVT | OPCODE_CVTA | OPCODE_ISSPACEP 
@@ -870,7 +870,7 @@ optionalFloatRounding : floatRounding | /* empty string */;
 
 instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2 
 	| basicInstruction3 | bfe | bfi | bfind | bmsk | brev | branch | addOrSub
-	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | exit
+	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | dp2a | dp4a | exit
 	| fns | ld | ldu | lop3 | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
 	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust | szext
@@ -883,6 +883,19 @@ basicInstruction3 : basicInstruction3Opcode dataType operand ',' operand ','
 	operand ';'
 {
 	state.instruction( $<text>1, $<value>2 );
+};
+
+dp4a : OPCODE_DP4A dataType dataType operand ',' operand ',' operand ',' operand ';'
+{
+	state.instruction( $<text>1, $<value>2 );
+	state.dotType( $<value>3 );
+};
+
+dp2a : OPCODE_DP2A hiOrLo dataType dataType operand ',' operand ',' operand ',' operand ';'
+{
+	state.instruction( $<text>1, $<value>3 );
+	state.modifier( $<value>2 );
+	state.dotType( $<value>4 );
 };
 
 approxInstruction2Opcode : OPCODE_RSQRT | OPCODE_SIN | OPCODE_COS | OPCODE_LG2 

@@ -269,6 +269,7 @@ namespace parser
 					void instruction();
 					void instruction( const std::string& opcode, int dataType );
 					void instruction( const std::string& opcode );
+					void dotType( int token );
 					void lop3();
 					void mma( int shape, int accumulatorType, int aType, int bType, int cType );
 					void tex( int dataType );

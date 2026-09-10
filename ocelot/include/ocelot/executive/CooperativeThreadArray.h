@@ -473,6 +473,7 @@ namespace executive {
 		void eval_Cvt(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Cvta(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Div(CTAContext &context, const ir::PTXInstruction &instr);
+		void eval_Dp(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Ex2(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Exit(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Fma(CTAContext &context, const ir::PTXInstruction &instr);
