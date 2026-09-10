@@ -53,6 +53,7 @@ namespace ir {
 			Ld,
 			Ldu,
 			Lg2,
+			Lop3,
 			Mad24,
 			Mad,
 			MadC,
@@ -566,6 +567,10 @@ namespace ir {
 
 		/*! Source operand c */
 		PTXOperand c;
+
+		/*! Lookup table and predicate input for lop3 */
+		PTXOperand immLut;
+		PTXOperand q;
 
 		/*  Runtime annotations 
 			

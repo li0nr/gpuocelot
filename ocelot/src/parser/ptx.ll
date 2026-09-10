@@ -160,6 +160,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_LDU; }
 "lg2"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_LG2; }
+"lop3"                          { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_LOP3; }
 "membar"                        { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_MEMBAR; }
 "min"                           { sstrcpy( yylval->text, yytext, 1024 ); \

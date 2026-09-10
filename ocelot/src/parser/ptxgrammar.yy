@@ -57,7 +57,7 @@
 %token<text> OPCODE_DIV OPCODE_ABS OPCODE_NEG OPCODE_MIN OPCODE_MAX
 %token<text> OPCODE_MAD OPCODE_MADC OPCODE_SET OPCODE_SETP OPCODE_SELP 
 %token<text> OPCODE_SLCT OPCODE_MOV OPCODE_ST OPCODE_CVT OPCODE_AND OPCODE_XOR 
-%token<text> OPCODE_OR OPCODE_CVTA OPCODE_ISSPACEP OPCODE_LDU
+%token<text> OPCODE_OR OPCODE_LOP3 OPCODE_CVTA OPCODE_ISSPACEP OPCODE_LDU
 %token<text> OPCODE_SULD OPCODE_TXQ OPCODE_SUST OPCODE_SURED OPCODE_SUQ OPCODE_SZEXT
 %token<text> OPCODE_BRA OPCODE_CALL OPCODE_RET OPCODE_EXIT OPCODE_TRAP 
 %token<text> OPCODE_BRKPT OPCODE_SUBC OPCODE_TEX OPCODE_LD OPCODE_BARSYNC
@@ -680,7 +680,7 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_MAD | OPCODE_MADC | OPCODE_SET | OPCODE_SETP | OPCODE_SELP
 	| OPCODE_SLCT | OPCODE_MOV | OPCODE_ST | OPCODE_COPYSIGN | OPCODE_SHFL
 	| OPCODE_SHF | OPCODE_CVT | OPCODE_CVTA | OPCODE_ISSPACEP 
-	| OPCODE_AND | OPCODE_XOR | OPCODE_OR
+	| OPCODE_AND | OPCODE_XOR | OPCODE_OR | OPCODE_LOP3
 	| OPCODE_BRA | OPCODE_CALL | OPCODE_RET | OPCODE_EXIT | OPCODE_TRAP 
 	| OPCODE_BRKPT | OPCODE_SUBC | OPCODE_TEX | OPCODE_LD | OPCODE_LDU
 	| OPCODE_BARSYNC | OPCODE_SULD | OPCODE_TXQ | OPCODE_SUST | OPCODE_SURED 
@@ -871,7 +871,7 @@ optionalFloatRounding : floatRounding | /* empty string */;
 instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2 
 	| basicInstruction3 | bfe | bfi | bfind | bmsk | brev | branch | addOrSub
 	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | exit
-	| fns | ld | ldu | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
+	| fns | ld | ldu | lop3 | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
 	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust | szext
 	| testp | tex | tld4 | trap | txq | vote | shfl | shf;
@@ -1078,6 +1078,23 @@ bfi : OPCODE_BFI dataType operand ',' operand ',' operand
 	',' operand ',' operand ';'
 {
 	state.instruction( $<text>1, $<value>2 );
+};
+
+lop3 : OPCODE_LOP3 TOKEN_B32 operand ',' operand ',' operand ',' operand
+	',' operand ';'
+{
+	state.lop3();
+};
+
+lop3BoolOperator : TOKEN_AND | TOKEN_OR
+{
+	state.boolean( $<value>1 );
+};
+
+lop3 : OPCODE_LOP3 lop3BoolOperator TOKEN_B32 operand '|' operand ',' operand
+	',' operand ',' operand ',' operand ',' operand ';'
+{
+	state.lop3();
 };
 
 bfind : OPCODE_BFIND shiftAmount dataType operand ',' operand ';'

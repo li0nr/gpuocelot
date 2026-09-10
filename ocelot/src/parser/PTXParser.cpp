@@ -1940,6 +1940,29 @@ namespace parser
 		instruction( opcode, TOKEN_B64 );
 	}
 
+	void PTXParser::State::lop3()
+	{
+		assert( operandVector.size() == 6 || operandVector.size() == 8 );
+		statement.directive = ir::PTXStatement::Instr;
+		statement.instruction.opcode = ir::PTXInstruction::Lop3;
+		statement.instruction.type = ir::PTXOperand::b32;
+		statement.instruction.pg = operandVector[0].operand;
+
+		unsigned int index = 1;
+		statement.instruction.d = operandVector[index++].operand;
+		if( operandVector.size() == 8 ) {
+			statement.instruction.pq = operandVector[index++].operand;
+		}
+		statement.instruction.a = operandVector[index++].operand;
+		statement.instruction.b = operandVector[index++].operand;
+		statement.instruction.c = operandVector[index++].operand;
+		statement.instruction.immLut = operandVector[index++].operand;
+		if( operandVector.size() == 8 ) {
+			statement.instruction.q = operandVector[index].operand;
+		}
+		_setImmediateTypes();
+	}
+
 	void PTXParser::State::mma( int shapeToken, int accumulatorToken,
 		int aToken, int bToken, int cToken )
 	{
@@ -2653,6 +2676,7 @@ namespace parser
 		if( string == "ld" ) return ir::PTXInstruction::Ld;
 		if( string == "ldu" ) return ir::PTXInstruction::Ldu;
 		if( string == "lg2" ) return ir::PTXInstruction::Lg2;
+		if( string == "lop3" ) return ir::PTXInstruction::Lop3;
 		if( string == "mad24" ) return ir::PTXInstruction::Mad24;
 		if( string == "mad" ) return ir::PTXInstruction::Mad;
 		if( string == "madc" ) return ir::PTXInstruction::MadC;

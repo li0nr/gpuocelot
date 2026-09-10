@@ -3313,6 +3313,75 @@ public:
 		return true;
 	}
 
+	bool test_Lop3() {
+		std::stringstream ptx;
+		ptx << ".version 8.2\n"
+			<< ".target sm_86\n"
+			<< ".address_size 64\n"
+			<< ".visible .entry test_lop3() {\n"
+			<< "  .reg .b32 d, a, b, c;\n"
+			<< "  .reg .pred p, q;\n"
+			<< "  lop3.b32 d, a, b, c, 0x40;\n"
+			<< "  lop3.or.b32 d|p, a, b, c, 0x3f, q;\n"
+			<< "  lop3.and.b32 _|p, a, b, c, 0x3f, q;\n"
+			<< "  ret;\n"
+			<< "}\n";
+		Module parsed;
+		try {
+			parsed.load(ptx);
+		}
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse lop3 examples: " << error.what() << "\n";
+			return false;
+		}
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Lop3;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("d", PTXOperand::b32, 0);
+		ins.a = reg("a", PTXOperand::b32, 1);
+		ins.b = reg("b", PTXOperand::b32, 2);
+		ins.c = reg("c", PTXOperand::b32, 3);
+		ins.immLut = imm_uint("immLut", PTXOperand::b32, 0x40);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU32(thread, 1, 0xffffffffu);
+			cta->setRegAsU32(thread, 2, 0x0f0f0f0fu);
+			cta->setRegAsU32(thread, 3, 0x00ff00ffu);
+		}
+		cta->eval_Lop3(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0x0f000f00u) return false;
+		}
+
+		ins.booleanOperator = PTXInstruction::BoolOr;
+		ins.pq = reg("p", PTXOperand::pred, 4);
+		ins.q = reg("q", PTXOperand::pred, 5);
+		ins.immLut = imm_uint("immLut", PTXOperand::b32, 0x3f);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU32(thread, 1, 0xffffffffu);
+			cta->setRegAsU32(thread, 2, 0xffffffffu);
+			cta->setRegAsPredicate(thread, 5, true);
+		}
+		cta->eval_Lop3(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU32(thread, 0) != 0
+				|| !cta->getRegAsPredicate(thread, 4)) return false;
+		}
+
+		ins.booleanOperator = PTXInstruction::BoolAnd;
+		ins.d.addressMode = PTXOperand::BitBucket;
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU32(thread, 1, 0);
+			cta->setRegAsPredicate(thread, 5, false);
+		}
+		cta->eval_Lop3(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsPredicate(thread, 4)) return false;
+		}
+
+		return true;
+	}
+
 /*!
 		Tests several forms of the and instruction
 	*/
@@ -5249,6 +5318,7 @@ public:
 			result = (result && test_Fns());
 			result = (result && test_Szext());
 			result = (result && test_Bmsk());
+			result = (result && test_Lop3());
 			result = (result && test_And());
 			result = (result && test_Or());
 			result = (result && test_Xor());

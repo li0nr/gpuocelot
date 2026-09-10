@@ -382,6 +382,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case Ld:         return "ld";         break;
 		case Ldu:        return "ldu";        break;
 		case Lg2:        return "lg2";        break;
+		case Lop3:       return "lop3";       break;
 		case Mad24:      return "mad24";      break;
 		case Mad:        return "mad";        break;
 		case Mma:        return "mma";        break;
@@ -712,6 +713,32 @@ std::string ir::PTXInstruction::valid() const {
 				|| !PTXOperand::valid( type, a.type )
 				|| !PTXOperand::valid( type, b.type ) ) {
 				return "bmsk operands must have 32-bit integer types";
+			}
+			break;
+		}
+		case Lop3: {
+			if( type != PTXOperand::b32 ) {
+				return "lop3 instruction requires .b32 type";
+			}
+			const bool predicateResult = pq.addressMode != PTXOperand::Invalid;
+			if( (d.addressMode == PTXOperand::BitBucket && !predicateResult)
+				|| (d.addressMode != PTXOperand::BitBucket
+					&& !PTXOperand::valid( type, d.type ))
+				|| !PTXOperand::valid( type, a.type )
+				|| !PTXOperand::valid( type, b.type ) ) {
+				return "lop3 data operands must have 32-bit integer types";
+			}
+			if( !PTXOperand::valid( type, c.type ) ) {
+				return "lop3 data operands must have 32-bit integer types";
+			}
+			if( immLut.addressMode != PTXOperand::Immediate
+				|| immLut.imm_uint > 0xff ) {
+				return "lop3 immLut must be an integer constant from 0 to 255";
+			}
+			if( predicateResult && (pq.type != PTXOperand::pred
+				|| q.type != PTXOperand::pred
+				|| (booleanOperator != BoolAnd && booleanOperator != BoolOr)) ) {
+				return "lop3 predicate form requires .and or .or and predicates p, q";
 			}
 			break;
 		}
@@ -2309,6 +2336,18 @@ std::string ir::PTXInstruction::toString() const {
 		case Bmsk: {
 			return guard() + "bmsk." + toString(shiftMode) + ".b32 "
 				+ d.toString() + ", " + a.toString() + ", " + b.toString();
+		}
+		case Lop3: {
+			std::string result = guard() + "lop3";
+			if( pq.addressMode != PTXOperand::Invalid ) {
+				result += "." + toString(booleanOperator);
+			}
+			result += ".b32 " + d.toString();
+			if( pq.addressMode != PTXOperand::Invalid ) result += "|" + pq.toString();
+			result += ", " + a.toString() + ", " + b.toString() + ", "
+				+ c.toString() + ", " + immLut.toString();
+			if( pq.addressMode != PTXOperand::Invalid ) result += ", " + q.toString();
+			return result;
 		}
 		case Bra: {
 			std::string result = guard() + "bra";

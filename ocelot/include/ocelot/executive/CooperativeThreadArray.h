@@ -483,6 +483,7 @@ namespace executive {
 		void eval_Ld(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Ldu(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Lg2(CTAContext &context, const ir::PTXInstruction &instr);
+		void eval_Lop3(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Mad24(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Mad(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Max(CTAContext &context, const ir::PTXInstruction &instr);

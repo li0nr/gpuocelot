@@ -574,6 +574,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Ld(context, instr); break;
 			case ir::PTXInstruction::Lg2:
 				eval_Lg2(context, instr); break;
+			case ir::PTXInstruction::Lop3:
+				eval_Lop3(context, instr); break;
 			case ir::PTXInstruction::Ldu:
 				eval_Ldu(context, instr); break;
 			case ir::PTXInstruction::Mad24:
@@ -5510,6 +5512,38 @@ void executive::CooperativeThreadArray::eval_Lg2(CTAContext &context,
 	}
 	else {
 		throw RuntimeException("unsupported data type", context.PC, instr);
+	}
+}
+
+void executive::CooperativeThreadArray::eval_Lop3(CTAContext &context,
+	const ir::PTXInstruction &instr) {
+	trace();
+	for (int threadID = 0; threadID < threadCount; ++threadID) {
+		if (!context.predicated(threadID, instr)) continue;
+
+		const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+		const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+		const ir::PTXU32 c = operandAsU32(threadID, instr.c);
+		const ir::PTXU32 immLut = operandAsU32(threadID, instr.immLut);
+		ir::PTXU32 d = 0;
+		for (unsigned int bit = 0; bit < 32; ++bit) {
+			const unsigned int aBit = (a >> bit) & 1u;
+			const unsigned int bBit = (b >> bit) & 1u;
+			const unsigned int cBit = (c >> bit) & 1u;
+			const unsigned int index = (aBit << 2) | (bBit << 1) | cBit;
+			const unsigned int resultBit = (immLut >> index) & 1u;
+
+			d |= resultBit << bit;
+		}
+		if( instr.d.addressMode != ir::PTXOperand::BitBucket ) {
+			setRegAsU32(threadID, instr.d.reg, d);
+		}
+		if( instr.pq.addressMode != ir::PTXOperand::Invalid ) {
+			const bool q = operandAsPredicate(threadID, instr.q);
+			const bool p = instr.booleanOperator == ir::PTXInstruction::BoolAnd
+				? d != 0 && q : d != 0 || q;
+			setRegAsPredicate(threadID, instr.pq.reg, p);
+		}
 	}
 }
 
