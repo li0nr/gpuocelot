@@ -118,6 +118,35 @@ bool issubnormal_(T r0)
 		&& !hydrazine::isinf(r0) && r0 != (T)0;
 }
 
+static int setRoundingMode(int modifier)
+{
+	const int previous = hydrazine::fegetround();
+	int rounding = FE_TONEAREST;
+	if (modifier & ir::PTXInstruction::rz) rounding = FE_TOWARDZERO;
+	else if (modifier & ir::PTXInstruction::rm) rounding = FE_DOWNWARD;
+	else if (modifier & ir::PTXInstruction::rp) rounding = FE_UPWARD;
+	hydrazine::fesetround(rounding);
+	return previous;
+}
+
+template<typename T>
+static T roundedAdd(T a, T b, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = a + b;
+	hydrazine::fesetround(previous);
+	return d;
+}
+
+template<typename T>
+static T roundedSub(T a, T b, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = a - b;
+	hydrazine::fesetround(previous);
+	return d;
+}
+
 static executive::ReconvergenceMechanism*
 	getReconvergenceMechanism(executive::CooperativeThreadArray* cta) {
 
@@ -1825,7 +1854,8 @@ void executive::CooperativeThreadArray::eval_Add(CTAContext &context,
 			if (!context.predicated(threadID, instr)) continue;
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
 				b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
-			d = ftz(instr.modifier, sat(instr.modifier, a + b));
+			d = ftz(instr.modifier, sat(instr.modifier,
+				roundedAdd(a, b, instr.modifier)));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -1834,7 +1864,7 @@ void executive::CooperativeThreadArray::eval_Add(CTAContext &context,
 			if (!context.predicated(threadID, instr)) continue;
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a),
 				b = operandAsF64(threadID, instr.b);
-			d = a + b;
+			d = roundedAdd(a, b, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}
@@ -9266,7 +9296,8 @@ void executive::CooperativeThreadArray::eval_Sub(CTAContext &context,
 
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
 				b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
-			d = ftz(instr.modifier, sat(instr.modifier, a - b));
+			d = ftz(instr.modifier, sat(instr.modifier,
+				roundedSub(a, b, instr.modifier)));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -9276,7 +9307,7 @@ void executive::CooperativeThreadArray::eval_Sub(CTAContext &context,
 
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a),
 				b = operandAsF64(threadID, instr.b);
-			d = a - b;
+			d = roundedSub(a, b, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}

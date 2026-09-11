@@ -11,6 +11,7 @@
 #include <hydrazine/ArgumentParser.h>
 #include <hydrazine/Casts.h>
 #include <hydrazine/Exception.h>
+#include <hydrazine/FloatingPoint.h>
 #include <hydrazine/macros.h>
 #include <hydrazine/debug.h>
 
@@ -847,6 +848,85 @@ public:
 		}
 
 		return result;
+	}
+
+	bool test_AddSubRounding() {
+		PTXInstruction ins;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.b = reg("r2", PTXOperand::f32, 1);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz, PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 add32[][2] = {{0x3f800000, 0xbf800000},
+			{0x3f800000, 0xbf800000}, {0x3f800000, 0xbf800001},
+			{0x3f800001, 0xbf800000}};
+		const PTXU32 sub32[] = {0x3f800000, 0x3f7fffff, 0x3f7fffff, 0x3f800000};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			ins.opcode = PTXInstruction::Add;
+			cta->setRegAsF32(0, 0, 1.0f);
+			cta->setRegAsF32(0, 1, std::ldexp(1.0f, -24));
+			cta->setRegAsF32(1, 0, -1.0f);
+			cta->setRegAsF32(1, 1, -std::ldexp(1.0f, -24));
+			cta->eval_Add(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != add32[i][0]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != add32[i][1]) {
+				status << "add.f32 rounding failed\n";
+				return false;
+			}
+			ins.opcode = PTXInstruction::Sub;
+			cta->setRegAsF32(0, 0, 1.0f);
+			cta->setRegAsF32(0, 1, std::ldexp(1.0f, -25));
+			cta->eval_Sub(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != sub32[i]) {
+				status << "sub.f32 rounding failed\n";
+				return false;
+			}
+		}
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.b.type = ins.d.type = PTXOperand::f64;
+		const PTXU64 expected64[][3] = {
+			{0x3ff0000000000000ull, 0xbff0000000000000ull, 0x3ff0000000000000ull},
+			{0x3ff0000000000000ull, 0xbff0000000000000ull, 0x3fefffffffffffffull},
+			{0x3ff0000000000000ull, 0xbff0000000000001ull, 0x3fefffffffffffffull},
+			{0x3ff0000000000001ull, 0xbff0000000000000ull, 0x3ff0000000000000ull}};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			ins.opcode = PTXInstruction::Add;
+			cta->setRegAsF64(0, 0, 1.0);
+			cta->setRegAsF64(0, 1, std::ldexp(1.0, -53));
+			cta->setRegAsF64(1, 0, -1.0);
+			cta->setRegAsF64(1, 1, -std::ldexp(1.0, -53));
+			cta->eval_Add(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2)) != expected64[i][0]
+				|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2)) != expected64[i][1]) {
+				status << "add.f64 rounding failed\n";
+				return false;
+			}
+			ins.opcode = PTXInstruction::Sub;
+			cta->setRegAsF64(0, 1, std::ldexp(1.0, -54));
+			cta->eval_Sub(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2)) != expected64[i][2]) {
+				status << "sub.f64 rounding failed\n";
+				return false;
+			}
+		}
+		const int previous = hydrazine::fegetround();
+		hydrazine::fesetround(FE_UPWARD);
+		ins.modifier = 0;
+		ins.opcode = PTXInstruction::Add;
+		cta->setRegAsF64(0, 0, 1.0);
+		cta->setRegAsF64(0, 1, std::ldexp(1.0, -53));
+		cta->eval_Add(cta->getActiveContext(), ins);
+		const bool defaultRn = hydrazine::bit_cast<PTXU64>(
+			cta->getRegAsF64(0, 2)) == 0x3ff0000000000000ull;
+		const bool restored = hydrazine::fegetround() == FE_UPWARD;
+		hydrazine::fesetround(previous);
+		if (!defaultRn || !restored) {
+			status << "default rounding or rounding-mode restoration failed\n";
+			return false;
+		}
+		return true;
 	}
 
 	bool test_SubC() {
@@ -5411,6 +5491,7 @@ public:
 			result = (result && test_Abs());
 			result = (result && test_Add());
 			result = (result && test_Sub());
+			result = (result && test_AddSubRounding());
 			result = (result && test_Div());
 			result = (result && test_Neg());
 			result = (result && test_Rem());
