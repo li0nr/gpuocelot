@@ -2859,6 +2859,7 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Fma;
+		ins.modifier = PTXInstruction::rn;
 
 		// f32
 		//
@@ -2979,6 +2980,7 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Fma;
+		ins.modifier = PTXInstruction::rn;
 
 		// f32
 		//
@@ -2988,6 +2990,28 @@ public:
 			ins.b = reg("r2", PTXOperand::f32, 1);
 			ins.c = reg("r4", PTXOperand::f32, 3);
 			ins.d = reg("r3", PTXOperand::f32, 2);
+			if (!ins.valid().empty()) {
+				status << "fma.rn.f32 rejected\n";
+				return false;
+			}
+			PTXInstruction invalid = ins;
+			invalid.modifier = 0;
+			if (invalid.valid().empty()) {
+				status << "fma.f32 accepted without a rounding modifier\n";
+				return false;
+			}
+			invalid = ins;
+			invalid.modifier |= PTXInstruction::rz;
+			if (invalid.valid().empty()) {
+				status << "fma.f32 accepted multiple rounding modifiers\n";
+				return false;
+			}
+			invalid = ins;
+			invalid.c.type = PTXOperand::s32;
+			if (invalid.valid().empty()) {
+				status << "fma.f32 accepted a mismatched C operand\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF32(i, 0, (PTXF32)((float)i / (float)threadCount * 4.0f));
@@ -3018,17 +3042,29 @@ public:
 			ins.b = reg("r2", PTXOperand::f64, 1);
 			ins.c = reg("r4", PTXOperand::f64, 3);
 			ins.d = reg("r3", PTXOperand::f64, 2);
+			PTXInstruction invalid = ins;
+			invalid.modifier |= PTXInstruction::ftz;
+			if (invalid.valid().empty()) {
+				status << "fma.ftz.f64 accepted\n";
+				return false;
+			}
+			invalid = ins;
+			invalid.modifier |= PTXInstruction::sat;
+			if (invalid.valid().empty()) {
+				status << "fma.sat.f64 accepted\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsF64(i, 0, (PTXF32)((double)i / (double)threadCount * 4.5));
-				cta->setRegAsF64(i, 1, (PTXF32)((double)i / (double)threadCount * 2.25));
-				cta->setRegAsF64(i, 3, (PTXF32)((double)i / (double)threadCount * 0.55));
+				cta->setRegAsF64(i, 0, (PTXF64)((double)i / (double)threadCount * 4.5));
+				cta->setRegAsF64(i, 1, (PTXF64)((double)i / (double)threadCount * 2.25));
+				cta->setRegAsF64(i, 3, (PTXF64)((double)i / (double)threadCount * 0.55));
 				cta->setRegAsF64(i, 2, 0);
 			}
 			cta->eval_Fma(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXF32 got = cta->getRegAsF32(i, 2);
-				PTXF32 exp = (double)i / (double)threadCount * 4.5 * (double)i / (double)threadCount * 2.25 +
+				PTXF64 got = cta->getRegAsF64(i, 2);
+				PTXF64 exp = (double)i / (double)threadCount * 4.5 * (double)i / (double)threadCount * 2.25 +
 					(double)i / (double)threadCount *  0.55;
 					
 				if (std::fabs(got - exp) > 0.1) {
@@ -3039,6 +3075,101 @@ public:
 					break;
 				}
 			}
+		}
+
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz,
+			PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 expected32[][2] = {{0x7f800000, 0xff800000},
+			{0x7f7fffff, 0xff7fffff}, {0x7f7fffff, 0xff800000},
+			{0x7f800000, 0xff7fffff}};
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f32;
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::max());
+			cta->setRegAsF32(0, 1, 2.0f);
+			cta->setRegAsF32(0, 3, 0.0f);
+			cta->setRegAsF32(1, 0, -std::numeric_limits<PTXF32>::max());
+			cta->setRegAsF32(1, 1, 2.0f);
+			cta->setRegAsF32(1, 3, 0.0f);
+			cta->setRegAsF32(2, 0, 1.0f + std::ldexp(1.0f, -23));
+			cta->setRegAsF32(2, 1, 1.0f - std::ldexp(1.0f, -23));
+			cta->setRegAsF32(2, 3, -1.0f);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != expected32[i][0]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != expected32[i][1]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(2, 2)) != 0xa8800000) {
+				status << "fma.f32 fused rounding failed\n";
+				return false;
+			}
+		}
+
+		const PTXU64 expected64[][2] = {{0x7ff0000000000000ull, 0xfff0000000000000ull},
+			{0x7fefffffffffffffull, 0xffefffffffffffffull},
+			{0x7fefffffffffffffull, 0xfff0000000000000ull},
+			{0x7ff0000000000000ull, 0xffefffffffffffffull}};
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f64;
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			cta->setRegAsF64(0, 0, std::numeric_limits<PTXF64>::max());
+			cta->setRegAsF64(0, 1, 2.0);
+			cta->setRegAsF64(0, 3, 0.0);
+			cta->setRegAsF64(1, 0, -std::numeric_limits<PTXF64>::max());
+			cta->setRegAsF64(1, 1, 2.0);
+			cta->setRegAsF64(1, 3, 0.0);
+			cta->setRegAsF64(2, 0, 1.0 + std::ldexp(1.0, -52));
+			cta->setRegAsF64(2, 1, 1.0 - std::ldexp(1.0, -52));
+			cta->setRegAsF64(2, 3, -1.0);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2)) != expected64[i][0]
+				|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2)) != expected64[i][1]
+				|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(2, 2)) != 0xb970000000000000ull) {
+				status << "fma.f64 fused rounding failed\n";
+				return false;
+			}
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		if (!ins.valid().empty()) {
+			status << "fma.rn.ftz.f32 rejected\n";
+			return false;
+		}
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::min());
+		cta->setRegAsF32(0, 1, 0.5f);
+		cta->setRegAsF32(0, 3, 0.0f);
+		cta->setRegAsF32(1, 0, std::numeric_limits<PTXF32>::denorm_min());
+		cta->setRegAsF32(1, 1, std::numeric_limits<PTXF32>::max());
+		cta->setRegAsF32(1, 3, 0.0f);
+		cta->setRegAsF32(2, 0, -std::numeric_limits<PTXF32>::min());
+		cta->setRegAsF32(2, 1, 0.5f);
+		cta->setRegAsF32(2, 3, -0.0f);
+		cta->eval_Fma(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(2, 2)) != 0x80000000) {
+			status << "fma.rn.ftz.f32 failed\n";
+			return false;
+		}
+
+		ins.modifier = PTXInstruction::rn | PTXInstruction::sat;
+		cta->setRegAsF32(0, 0, 2.0f);
+		cta->setRegAsF32(0, 1, 1.0f);
+		cta->setRegAsF32(0, 3, 0.0f);
+		cta->setRegAsF32(1, 0, -1.0f);
+		cta->setRegAsF32(1, 1, 1.0f);
+		cta->setRegAsF32(1, 3, 0.0f);
+		cta->setRegAsF32(2, 0, std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(2, 1, 0.0f);
+		cta->setRegAsF32(2, 3, 0.0f);
+		cta->eval_Fma(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2) != 1.0f
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(2, 2)) != 0) {
+			status << "fma.rn.sat.f32 failed\n";
+			return false;
 		}
 
 		return result;
@@ -5564,6 +5695,7 @@ public:
 			result = (result && test_Sin());
 			result = (result && test_Tanh());
 			result = (result && test_Ex2());
+			result = (result && test_Fma());
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());
 			result = (result && test_Mma());

@@ -156,6 +156,15 @@ static T roundedMul(T a, T b, int modifier)
 	return d;
 }
 
+template<typename T>
+static T roundedFma(T a, T b, T c, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = std::fma(a, b, c);
+	hydrazine::fesetround(previous);
+	return d;
+}
+
 static executive::ReconvergenceMechanism*
 	getReconvergenceMechanism(executive::CooperativeThreadArray* cta) {
 
@@ -4785,7 +4794,8 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 				b = ftz(instr.modifier, operandAsF32(tid, instr.b)),
 				c = ftz(instr.modifier, operandAsF32(tid, instr.c));
 
-			d = ftz(instr.modifier, sat(instr.modifier, a * b + c));
+			d = ftz(instr.modifier, sat(instr.modifier,
+				roundedFma(a, b, c, instr.modifier)));
 
 			setRegAsF32(tid, instr.d.reg, d);
 		}
@@ -4796,7 +4806,7 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 
 			ir::PTXF64 d, a = operandAsF64(tid, instr.a),
 				b = operandAsF64(tid, instr.b), c = operandAsF64(tid, instr.c);
-			d = a * b + c;
+			d = roundedFma(a, b, c, instr.modifier);
 			setRegAsF64(tid, instr.d.reg, d);
 		}
 	}
