@@ -372,6 +372,29 @@ static ir::PTXF32 ftz(int modifier, ir::PTXF32 f) {
 	return f;
 }
 
+static ir::PTXF32 minMaxF32(int modifier, ir::PTXF32 a,
+	ir::PTXF32 b, bool maximum) {
+	const bool xorSign = std::signbit(a) != std::signbit(b);
+	if (modifier & ir::PTXInstruction::xorsign) {
+		a = std::fabs(a);
+		b = std::fabs(b);
+	}
+	ir::PTXF32 d;
+	if ((modifier & ir::PTXInstruction::nan)
+		&& (hydrazine::isnan(a) || hydrazine::isnan(b))) {
+		d = hydrazine::bit_cast<ir::PTXF32>(0x7fffffffU);
+	} else if (hydrazine::isnan(a)) {
+		d = b;
+	} else if (hydrazine::isnan(b)) {
+		d = a;
+	} else {
+		d = maximum ? (a > b ? a : b) : (a < b ? a : b);
+	}
+	d = ftz(modifier, d);
+	return (modifier & ir::PTXInstruction::xorsign) && !hydrazine::isnan(d)
+		? hydrazine::copysign(d, xorSign ? -1.0f : 1.0f) : d;
+}
+
 static ir::PTXU16 ftzF16(int modifier, ir::PTXU16 bits)
 {
 	const bool subnormal = (bits & 0x7c00u) == 0 && (bits & 0x03ffu) != 0;
@@ -5816,24 +5839,10 @@ void executive::CooperativeThreadArray::eval_Max(CTAContext &context,
 	if (instr.type == ir::PTXOperand::f32) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
-
-			ir::PTXF32 d, a = operandAsF32(threadID, instr.a),
+			ir::PTXF32 a = operandAsF32(threadID, instr.a),
 				b = operandAsF32(threadID, instr.b);
-
-			if(hydrazine::isnan(a))
-			{
-				d = ftz(instr.modifier, b);
-			}
-			else if(hydrazine::isnan(b))
-			{
-				d = ftz(instr.modifier, a);
-			}
-			else
-			{
-				d = ftz(instr.modifier, a > b ? a : b);
-			}
-
-			setRegAsF32(threadID, instr.d.reg, d);
+			setRegAsF32(threadID, instr.d.reg,
+				minMaxF32(instr.modifier, a, b, true));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f64) {
@@ -5960,24 +5969,10 @@ void executive::CooperativeThreadArray::eval_Min(CTAContext &context,
 	if (instr.type == ir::PTXOperand::f32) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
-
-			ir::PTXF32 d, a = operandAsF32(threadID, instr.a),
+			ir::PTXF32 a = operandAsF32(threadID, instr.a),
 				b = operandAsF32(threadID, instr.b);
-
-			if(hydrazine::isnan(a))
-			{
-				d = ftz(instr.modifier, b);
-			}
-			else if(hydrazine::isnan(b))
-			{
-				d = ftz(instr.modifier, a);
-			}
-			else
-			{
-				d = ftz(instr.modifier, (a < b ? a : b));
-			}
-
-			setRegAsF32(threadID, instr.d.reg, d);
+			setRegAsF32(threadID, instr.d.reg,
+				minMaxF32(instr.modifier, a, b, false));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f64) {

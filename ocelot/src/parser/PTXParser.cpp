@@ -2766,6 +2766,9 @@ namespace parser
 			case TOKEN_RP: return ir::PTXInstruction::rp; break;
 			case TOKEN_FTZ: return ir::PTXInstruction::ftz; break;
 			case TOKEN_APPROX: return ir::PTXInstruction::approx; break;			
+			case TOKEN_NAN_MODIFIER: return ir::PTXInstruction::nan; break;
+			case TOKEN_XORSIGN: return ir::PTXInstruction::xorsign; break;
+			case TOKEN_ABS_MODIFIER: return ir::PTXInstruction::abs; break;
 			default: break;
 		}
 		

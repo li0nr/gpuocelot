@@ -144,6 +144,9 @@ namespace ir {
 			approx = 8192,//< identify an approximate instruction
 			ftz = 16384,	//< flush to zero
 			full = 32768,	//< full division
+			nan = 65536,	//< return NaN if either input is NaN
+			xorsign = 131072,	//< XOR input sign bits
+			abs = 262144,	//< compare absolute input values
 			Modifier_invalid = 0
 		};
 			

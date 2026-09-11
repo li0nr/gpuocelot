@@ -214,6 +214,15 @@ std::string ir::PTXInstruction::modifierString( unsigned int modifier,
 	if( modifier & ftz ) {
 		result += "ftz.";
 	}
+	if( modifier & nan ) {
+		result += "NaN.";
+	}
+	if( modifier & xorsign ) {
+		result += "xorsign.";
+	}
+	if( modifier & abs ) {
+		result += "abs.";
+	}
 	if( modifier & sat ) {
 		result += "sat.";
 	}
@@ -235,6 +244,9 @@ std::string ir::PTXInstruction::toString( Modifier modifier ) {
 		case rp:     return "rp";     break;
 		case approx: return "approx"; break;
 		case ftz:    return "ftz";    break;
+		case nan:    return "NaN";    break;
+		case xorsign:return "xorsign";break;
+		case abs:    return "abs";    break;
 		default: break;
 	}
 	return "";	
@@ -488,6 +500,16 @@ bool ir::PTXInstruction::operator==( const PTXInstruction& i ) const {
 }
 
 std::string ir::PTXInstruction::valid() const {
+	if( opcode == Min || opcode == Max ) {
+		const unsigned int fp32Modifiers = nan | xorsign | abs;
+		if( (modifier & fp32Modifiers) && type != PTXOperand::f32 ) {
+			return "NaN and xorsign.abs modifiers require f32";
+		}
+		if( (modifier & (xorsign | abs)) != 0
+			&& (modifier & (xorsign | abs)) != (xorsign | abs) ) {
+			return "xorsign and abs modifiers must be specified together";
+		}
+	}
 	switch (opcode) {
 		case Abs: {
 			if ( !( type == PTXOperand::s16 || type == PTXOperand::s32 || 

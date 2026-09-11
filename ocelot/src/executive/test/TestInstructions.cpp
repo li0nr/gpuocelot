@@ -9,6 +9,7 @@
 #include <hydrazine/Test.h>
 
 #include <hydrazine/ArgumentParser.h>
+#include <hydrazine/Casts.h>
 #include <hydrazine/Exception.h>
 #include <hydrazine/macros.h>
 #include <hydrazine/debug.h>
@@ -1102,6 +1103,21 @@ public:
 
 	bool test_Min() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_minmax() {\n"
+			<< "  .reg .f32 d, a, b;\n"
+			<< "  min.NaN.f32 d, a, b;\n"
+			<< "  min.xorsign.abs.f32 d, a, b;\n"
+			<< "  max.NaN.f32 d, a, b;\n"
+			<< "  max.xorsign.abs.f32 d, a, b;\n  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse min/max modifier examples: "
+				<< error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Min;
@@ -1298,6 +1314,33 @@ public:
 					break;
 				}
 			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::nan | PTXInstruction::xorsign
+				| PTXInstruction::abs;
+			ins.a = reg("r1", PTXOperand::f32, 0);
+			ins.b = reg("r2", PTXOperand::f32, 1);
+			ins.d = reg("r3", PTXOperand::f32, 2);
+			cta->setRegAsF32(0, 0,
+				hydrazine::bit_cast<PTXF32>(0xffc00000U));
+			cta->setRegAsF32(0, 1, 2.0f);
+			cta->setRegAsF32(1, 0, -4.0f);
+			cta->setRegAsF32(1, 1, 2.0f);
+			cta->setRegAsF32(2, 0, 0.0f);
+			cta->setRegAsF32(2, 1, -0.0f);
+			cta->eval_Min(cta->getActiveContext(), ins);
+			result = hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2))
+				== 0x7fffffffU && cta->getRegAsF32(1, 2) == -2.0f
+				&& std::signbit(cta->getRegAsF32(2, 2));
+			ins.opcode = PTXInstruction::Max;
+			cta->eval_Max(cta->getActiveContext(), ins);
+			result = result && hydrazine::bit_cast<PTXU32>(
+				cta->getRegAsF32(0, 2)) == 0x7fffffffU
+				&& cta->getRegAsF32(1, 2) == -4.0f
+				&& std::signbit(cta->getRegAsF32(2, 2));
+			if (!result) status << "min/max modifiers incorrect\n";
 		}
 
 		return result;

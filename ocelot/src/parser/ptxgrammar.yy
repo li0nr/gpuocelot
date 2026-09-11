@@ -98,6 +98,7 @@
 %token<value> TOKEN_TAIL TOKEN_UNI TOKEN_ALIGN TOKEN_BYTE TOKEN_WIDE TOKEN_CARRY
 %token<value> TOKEN_RNI TOKEN_RMI TOKEN_RZI TOKEN_RPI
 %token<value> TOKEN_FTZ TOKEN_APPROX TOKEN_FULL TOKEN_SHIFT_AMOUNT
+%token<value> TOKEN_NAN_MODIFIER TOKEN_XORSIGN TOKEN_ABS_MODIFIER
 %token<value> TOKEN_R TOKEN_G TOKEN_B TOKEN_A TOKEN_L
 
 %token<value> TOKEN_TO
@@ -936,10 +937,24 @@ ftzInstruction2 : ftzInstruction2Opcode optionalFtz dataType operand ','
 
 ftzInstruction3Opcode : OPCODE_MAX | OPCODE_MIN;
 
-ftzInstruction3 : ftzInstruction3Opcode optionalFtz dataType operand ',' 
+optionalNanModifier : TOKEN_NAN_MODIFIER
+{
+	state.modifier( $<value>1 );
+}
+| /* empty string */;
+
+optionalXorsignAbs : TOKEN_XORSIGN TOKEN_ABS_MODIFIER
+{
+	state.modifier( $<value>1 );
+	state.modifier( $<value>2 );
+}
+| /* empty string */;
+
+ftzInstruction3 : ftzInstruction3Opcode optionalFtz optionalNanModifier
+	optionalXorsignAbs dataType operand ','
 	operand ',' operand ';'
 {
-	state.instruction( $<text>1, $<value>3 );
+	state.instruction( $<text>1, $<value>5 );
 };
 
 optionalUni : /* empty string */

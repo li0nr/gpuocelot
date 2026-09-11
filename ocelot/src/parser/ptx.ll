@@ -396,6 +396,9 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".geu"                          { yylval->value = TOKEN_GEU; return TOKEN_GEU; }
 ".num"                          { yylval->value = TOKEN_NUM; return TOKEN_NUM; }
 ".nan"                          { yylval->value = TOKEN_NAN; return TOKEN_NAN; }
+".NaN"                          { yylval->value = TOKEN_NAN_MODIFIER; return TOKEN_NAN_MODIFIER; }
+".xorsign"                      { yylval->value = TOKEN_XORSIGN; return TOKEN_XORSIGN; }
+".abs"                          { yylval->value = TOKEN_ABS_MODIFIER; return TOKEN_ABS_MODIFIER; }
 
 ".and"                          { yylval->value = TOKEN_AND; return TOKEN_AND; }
 ".or"                           { yylval->value = TOKEN_OR; return TOKEN_OR; }
