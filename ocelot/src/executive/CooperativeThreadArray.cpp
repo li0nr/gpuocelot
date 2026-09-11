@@ -147,6 +147,15 @@ static T roundedSub(T a, T b, int modifier)
 	return d;
 }
 
+template<typename T>
+static T roundedMul(T a, T b, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = a * b;
+	hydrazine::fesetround(previous);
+	return d;
+}
+
 static executive::ReconvergenceMechanism*
 	getReconvergenceMechanism(executive::CooperativeThreadArray* cta) {
 
@@ -6523,7 +6532,8 @@ void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::
 
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
 				b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
-			d = ftz(instr.modifier, sat(instr.modifier, a * b));
+			d = ftz(instr.modifier, sat(instr.modifier,
+				roundedMul(a, b, instr.modifier)));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -6532,7 +6542,7 @@ void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a), b = operandAsF64(threadID, instr.b);
-			d = a * b;
+			d = roundedMul(a, b, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}

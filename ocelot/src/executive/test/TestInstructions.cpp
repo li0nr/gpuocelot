@@ -2639,6 +2639,53 @@ public:
 		return result;
 	}
 
+	bool test_MulRounding() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Mul;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.b = reg("r2", PTXOperand::f32, 1);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz,
+			PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 expected32[][2] = {{0x7f800000, 0xff800000},
+			{0x7f7fffff, 0xff7fffff}, {0x7f7fffff, 0xff800000},
+			{0x7f800000, 0xff7fffff}};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::max());
+			cta->setRegAsF32(0, 1, 2.0f);
+			cta->setRegAsF32(1, 0, -std::numeric_limits<PTXF32>::max());
+			cta->setRegAsF32(1, 1, 2.0f);
+			cta->eval_Mul(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != expected32[i][0]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != expected32[i][1]) {
+				status << "mul.f32 rounding failed\n";
+				return false;
+			}
+		}
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.b.type = ins.d.type = PTXOperand::f64;
+		const PTXU64 expected64[][2] = {{0x7ff0000000000000ull, 0xfff0000000000000ull},
+			{0x7fefffffffffffffull, 0xffefffffffffffffull},
+			{0x7fefffffffffffffull, 0xfff0000000000000ull},
+			{0x7ff0000000000000ull, 0xffefffffffffffffull}};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			cta->setRegAsF64(0, 0, std::numeric_limits<PTXF64>::max());
+			cta->setRegAsF64(0, 1, 2.0);
+			cta->setRegAsF64(1, 0, -std::numeric_limits<PTXF64>::max());
+			cta->setRegAsF64(1, 1, 2.0);
+			cta->eval_Mul(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2)) != expected64[i][0]
+				|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2)) != expected64[i][1]) {
+				status << "mul.f64 rounding failed\n";
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	//
 	//
@@ -5504,6 +5551,7 @@ public:
 			// difficult arithmetic instructions
 			result = (result && test_Mad());
 			result = (result && test_Mul());
+			result = (result && test_MulRounding());
 			result = (result && test_AddC());
 			result = (result && test_SubC());
 			result = (result && test_Dp());
