@@ -4324,6 +4324,36 @@ public:
 		return result;
 	}
 
+	bool test_Shl() {
+		bool result = true;
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Shl;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("r3", PTXOperand::b32, 0);
+		ins.a = reg("r1", PTXOperand::b32, 1);
+		ins.b = reg("r2", PTXOperand::u32, 2);
+
+		cta->reset();
+		for (int t = 0; t < threadCount; t++) {
+			cta->setRegAsB32(t, 1, 1);
+			cta->setRegAsU32(t, 2, 31 + t % 3);
+		}
+		cta->eval_Shl(cta->getActiveContext(), ins);
+		for (int t = 0; t < threadCount; t++) {
+			const PTXU32 shift = 31 + t % 3;
+			const PTXB32 expected = shift < 32 ? 1u << shift : 0;
+			const PTXB32 got = cta->getRegAsB32(t, 0);
+			if (got != expected) {
+				result = false;
+				status << "shl.b32 failed (thread " << t << "): expected "
+					<< expected << ", got " << got << "\n";
+				break;
+			}
+		}
+		return result;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	//
 	// Load, store
@@ -5956,6 +5986,7 @@ public:
 			result = (result && test_Or());
 			result = (result && test_Xor());
 			result = (result && test_Not());
+			result = (result && test_Shl());
 			if (prolix && result) {
 				status << "pass: logical instructions\n";
 			}
