@@ -4228,7 +4228,7 @@ public:
 	}
 
 	/*!
-		Tests several forms of the and instruction
+		Tests several forms of the not instruction
 	*/
 	bool test_Not() {
 		bool result = true;
@@ -4253,8 +4253,8 @@ public:
 				PTXB16 expected = (~t);
 				if (cta->getRegAsB16(t, 0) != expected) {
 					result = false;
-					status << "xor.b16 failed (thread " << t << "): expected " << expected 
-						<< ", got " << cta->getRegAsS16(t, 0) << "\n";
+					status << "not.b16 failed (thread " << t << "): expected " << expected
+						<< ", got " << cta->getRegAsB16(t, 0) << "\n";
 				}
 			}
 		}
@@ -4274,8 +4274,8 @@ public:
 				PTXB32 expected = (~t);
 				if (cta->getRegAsB32(t, 0) != expected) {
 					result = false;
-					status << "xor.b32 failed (thread " << t << "): expected " << expected 
-						<< ", got " << cta->getRegAsS16(t, 0) << "\n";
+					status << "not.b32 failed (thread " << t << "): expected " << expected
+						<< ", got " << cta->getRegAsB32(t, 0) << "\n";
 				}
 			}
 		}
@@ -4296,8 +4296,28 @@ public:
 				PTXB64 got = cta->getRegAsB64(t, 0);
 				if (got != expected) {
 					result = false;
-					status << "xor.b64 failed (thread " << t << "): expected " << expected 
+					status << "not.b64 failed (thread " << t << "): expected " << expected
 						<< ", got " << got << "\n";
+				}
+			}
+		}
+
+		// pred
+		//
+		if (result) {
+			ins.type = PTXOperand::pred;
+			ins.d = reg("p3", PTXOperand::pred, 0);
+			ins.a = reg("p1", PTXOperand::pred, 1);
+			for (int t = 0; t < threadCount; t++) {
+				cta->setRegAsPredicate(t, 1, t & 1);
+			}
+			cta->eval_Not(cta->getActiveContext(), ins);
+			for (int t = 0; t < threadCount; t++) {
+				const bool expected = !(t & 1);
+				if (cta->getRegAsPredicate(t, 0) != expected) {
+					result = false;
+					status << "not.pred failed\n";
+					break;
 				}
 			}
 		}
