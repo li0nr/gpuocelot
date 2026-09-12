@@ -5852,7 +5852,8 @@ void executive::CooperativeThreadArray::eval_Mad(CTAContext &context,
 				b = ftz(instr.modifier, operandAsF32(threadID, instr.b)),
 				c = ftz(instr.modifier, operandAsF32(threadID, instr.c));
 
-			d = ftz(instr.modifier, sat(instr.modifier, a * b + c));
+			d = ftz(instr.modifier,
+				sat(instr.modifier, roundedFma(a, b, c, instr.modifier)));
 
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
@@ -5866,10 +5867,7 @@ void executive::CooperativeThreadArray::eval_Mad(CTAContext &context,
 				b = operandAsF64(threadID, instr.b),
 				c = operandAsF64(threadID, instr.c);
 
-			d = a * b + c;
-			if (instr.modifier & ir::PTXInstruction::sat) {
-				if (d < 0) d = 0; else if (d > 1) d = 1;
-			}
+			d = roundedFma(a, b, c, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	} break;

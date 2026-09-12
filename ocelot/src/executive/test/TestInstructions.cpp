@@ -2332,10 +2332,21 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rn;
 			ins.a = reg("r1", PTXOperand::f32, 0);
 			ins.b = reg("r2", PTXOperand::f32, 1);
 			ins.c = reg("r3", PTXOperand::f32, 2);
 			ins.d = reg("r4", PTXOperand::f32, 3);
+			if (!ins.valid().empty()) {
+				status << "mad.rn.f32 rejected\n";
+				return false;
+			}
+			PTXInstruction invalid = ins;
+			invalid.modifier = 0;
+			if (invalid.valid().empty()) {
+				status << "mad.f32 accepted without a rounding modifier\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF32(i, 0, (PTXF32)(i - 1));
@@ -2363,6 +2374,12 @@ public:
 			ins.b = reg("r2", PTXOperand::f64, 1);
 			ins.c = reg("r3", PTXOperand::f64, 2);
 			ins.d = reg("r4", PTXOperand::f64, 3);
+			PTXInstruction invalid = ins;
+			invalid.modifier |= PTXInstruction::sat;
+			if (invalid.valid().empty()) {
+				status << "mad.sat.f64 accepted\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF64(i, 0, (PTXF64)(i - 1));
@@ -2372,7 +2389,7 @@ public:
 			}
 			cta->eval_Mad(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXF32 expected = (PTXF64)(i - 1) * (PTXF64)(4 + 2*i) + (PTXF64)(i);
+				PTXF64 expected = (PTXF64)(i - 1) * (PTXF64)(4 + 2*i) + (PTXF64)(i);
 				if (std::fabs(cta->getRegAsF64(i, 3) - expected) > 0.1) {
 					result = false;
 					status << "mad.f64 incorrect [" << i << "] - expected: " << expected 
@@ -2380,6 +2397,49 @@ public:
 					break;
 				}
 			}
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f32;
+		cta->setRegAsF32(0, 0, 1.0f + std::ldexp(1.0f, -23));
+		cta->setRegAsF32(0, 1, 1.0f - std::ldexp(1.0f, -23));
+		cta->setRegAsF32(0, 2, -1.0f);
+		cta->eval_Mad(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 3)) != 0xa8800000) {
+			status << "mad.f32 was not fused\n";
+			return false;
+		}
+
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f64;
+		cta->setRegAsF64(0, 0, 1.0 + std::ldexp(1.0, -52));
+		cta->setRegAsF64(0, 1, 1.0 - std::ldexp(1.0, -52));
+		cta->setRegAsF64(0, 2, -1.0);
+		cta->eval_Mad(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 3))
+			!= 0xb970000000000000ull) {
+			status << "mad.f64 was not fused\n";
+			return false;
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.c.type = ins.d.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::min());
+		cta->setRegAsF32(0, 1, 0.5f);
+		cta->setRegAsF32(0, 2, 0.0f);
+		cta->eval_Mad(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 3)) != 0) {
+			status << "mad.ftz.f32 failed\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn | PTXInstruction::sat;
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::quiet_NaN());
+		cta->setRegAsF32(0, 1, 1.0f);
+		cta->eval_Mad(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 3) != 0.0f) {
+			status << "mad.sat.f32 failed\n";
+			return false;
 		}
 
 		return result;

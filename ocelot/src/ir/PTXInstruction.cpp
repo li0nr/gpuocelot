@@ -1178,6 +1178,33 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Mad: {
+			if( type == PTXOperand::f32 || type == PTXOperand::f64 ) {
+				const int rounding = modifier & (rn | rz | rm | rp);
+				if( rounding != rn && rounding != rz
+					&& rounding != rm && rounding != rp ) {
+					return "mad requires exactly one rounding modifier";
+				}
+				if( type == PTXOperand::f64 && (modifier & (ftz | sat)) ) {
+					return "ftz and sat modifiers are invalid for mad.f64";
+				}
+				if( !PTXOperand::valid( type, a.type ) ) {
+					return "operand A type " + PTXOperand::toString( a.type )
+						+ " cannot be assigned to " + PTXOperand::toString( type );
+				}
+				if( !PTXOperand::valid( type, b.type ) ) {
+					return "operand B type " + PTXOperand::toString( b.type )
+						+ " cannot be assigned to " + PTXOperand::toString( type );
+				}
+				if( !PTXOperand::valid( type, c.type ) ) {
+					return "operand C type " + PTXOperand::toString( c.type )
+						+ " cannot be assigned to " + PTXOperand::toString( type );
+				}
+				if( !PTXOperand::valid( type, d.type ) ) {
+					return "operand D type " + PTXOperand::toString( d.type )
+						+ " cannot be assigned to " + PTXOperand::toString( type );
+				}
+				break;
+			}
 			if( !( type != PTXOperand::s8 && type != PTXOperand::u8 && 
 				type != PTXOperand::b8 && type != PTXOperand::f16 
 				&& type != PTXOperand::pred ) ) {
