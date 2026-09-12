@@ -4333,6 +4333,24 @@ public:
 		ins.d = reg("r3", PTXOperand::b32, 0);
 		ins.a = reg("r1", PTXOperand::b32, 1);
 		ins.b = reg("r2", PTXOperand::u32, 2);
+		if (!ins.valid().empty()) {
+			status << "valid shl.b32 rejected: " << ins.valid() << "\n";
+			return false;
+		}
+
+		PTXInstruction invalid = ins;
+		invalid.d = reg("rd", PTXOperand::b64, 0);
+		invalid.a = reg("ra", PTXOperand::b64, 1);
+		if (invalid.valid().empty()) {
+			status << "shl.b32 accepted 64-bit operands\n";
+			return false;
+		}
+		invalid = ins;
+		invalid.b = reg("rf", PTXOperand::f32, 2);
+		if (invalid.valid().empty()) {
+			status << "shl.b32 accepted an f32 shift operand\n";
+			return false;
+		}
 
 		cta->reset();
 		for (int t = 0; t < threadCount; t++) {

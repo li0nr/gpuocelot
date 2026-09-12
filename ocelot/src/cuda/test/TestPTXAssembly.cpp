@@ -1145,8 +1145,11 @@ std::string testLops_PTX(ir::PTXInstruction::Opcode opcode,
 			ptx << "\tld.global.u32 %r1, [%rIn + " 
 				<< std::max((size_t)ir::PTXOperand::bytes(type), sizeof(uint32_t)) 
 				<< "];              \n";
-			ptx << "\trem.u32 %r1, %r1, " 
-				<< 8 * ir::PTXOperand::bytes(type) << ";\n";
+			if( opcode == ir::PTXInstruction::Shr )
+			{
+				ptx << "\trem.u32 %r1, %r1, "
+					<< 8 * ir::PTXOperand::bytes(type) << ";\n";
+			}
 		}
 		else if(opcode == ir::PTXInstruction::And
 			|| opcode == ir::PTXInstruction::Or
@@ -1275,7 +1278,7 @@ void testLops_REF(void* output, void* input)
 		uint32_t r1 = getParameter<uint32_t>(input,
 			std::max(sizeof(type), sizeof(uint32_t)));
 
-		type d = r0 << (r1 % (sizeof(type) * 8));
+		type d = r1 >= sizeof(type) * 8 ? 0 : r0 << r1;
 		
 		setParameter(output, 0, d);
 		break;
@@ -7824,4 +7827,3 @@ int main(int argc, char** argv)
 }
 
 #endif
-

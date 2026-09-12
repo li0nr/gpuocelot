@@ -1946,18 +1946,19 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
-			if( d.bytes() != a.bytes() 
-				&& a.addressMode != PTXOperand::Immediate ) {
-				std::stringstream stream;
-				stream << "size of operand A " << a.bytes() 
-					<< " does not match size of operand D " << d.bytes();
-				return stream.str(); 
+			if( !PTXOperand::valid( type, d.type ) ) {
+				return "operand D type " + PTXOperand::toString( d.type )
+					+ " cannot be assigned to " + PTXOperand::toString( type );
 			}
-			if( b.bytes() != 4 && b.addressMode != PTXOperand::Immediate ) {
-				std::stringstream stream;
-				stream << "size of operand B " << a.bytes() 
-					<< " must be 4 bytes";
-				return stream.str();
+			if( a.addressMode != PTXOperand::Immediate
+				&& !PTXOperand::valid( type, a.type ) ) {
+				return "operand A type " + PTXOperand::toString( a.type )
+					+ " cannot be assigned to " + PTXOperand::toString( type );
+			}
+			if( b.addressMode != PTXOperand::Immediate
+				&& !PTXOperand::valid( PTXOperand::u32, b.type ) ) {
+				return "operand B type " + PTXOperand::toString( b.type )
+					+ " cannot be assigned to u32";
 			}
 			break;
 		}
