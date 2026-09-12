@@ -4151,7 +4151,7 @@ public:
 				if (cta->getRegAsB16(t, 0) != expected) {
 					result = false;
 					status << "xor.b16 failed (thread " << t << "): expected " << expected 
-						<< ", got " << cta->getRegAsS16(t, 0) << "\n";
+						<< ", got " << cta->getRegAsB16(t, 0) << "\n";
 				}
 			}
 		}
@@ -4173,7 +4173,7 @@ public:
 				if (cta->getRegAsB32(t, 0) != expected) {
 					result = false;
 					status << "xor.b32 failed (thread " << t << "): expected " << expected 
-						<< ", got " << cta->getRegAsS32(t, 0) << "\n";
+						<< ", got " << cta->getRegAsB32(t, 0) << "\n";
 				}
 			}
 		}
@@ -4197,6 +4197,30 @@ public:
 					result = false;
 					status << "xor.b64 failed (thread " << t << "): expected " << expected 
 						<< ", got " << got << "\n";
+				}
+			}
+		}
+
+		// pred
+		//
+		if (result) {
+			ins.type = PTXOperand::pred;
+			ins.d = reg("p3", PTXOperand::pred, 0);
+			ins.a = reg("p1", PTXOperand::pred, 1);
+			ins.b = reg("p2", PTXOperand::pred, 2);
+			for (int t = 0; t < threadCount; t++) {
+				cta->setRegAsPredicate(t, 1, t & 1);
+				cta->setRegAsPredicate(t, 2, t & 2);
+			}
+			cta->eval_Xor(cta->getActiveContext(), ins);
+			for (int t = 0; t < threadCount; t++) {
+				const bool a = t & 1;
+				const bool b = t & 2;
+				const bool expected = a != b;
+				if (cta->getRegAsPredicate(t, 0) != expected) {
+					result = false;
+					status << "xor.pred failed\n";
+					break;
 				}
 			}
 		}
