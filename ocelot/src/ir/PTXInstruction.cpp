@@ -951,19 +951,29 @@ std::string ir::PTXInstruction::valid() const {
 			if( ( modifier & sat ) ) {
 				return "no support for saturating divide.";
 			}
-			if( ( modifier & approx ) ) {
-				if( type != PTXOperand::f32 ) {
-					return "only f32 supported for approximate";
+			if( modifier & ~(rn | rz | rm | rp | approx | full | ftz) ) {
+				return "invalid divide modifier";
+			}
+			const int rounding = modifier & (rn | rz | rm | rp);
+			const bool oneRounding = rounding == rn || rounding == rz
+				|| rounding == rm || rounding == rp;
+			if( type == PTXOperand::f32 ) {
+				const int modes = ((modifier & approx) ? 1 : 0)
+					+ ((modifier & full) ? 1 : 0) + (rounding ? 1 : 0);
+				if( modes != 1 || (rounding && !oneRounding) ) {
+					return "div.f32 requires exactly one of approx, full, or rounding";
 				}
 			}
 			if( type == PTXOperand::f64 ) {
-				if( !( modifier & rn ) && !( modifier & rz ) 
-					&& !( modifier & rm ) && !( modifier & rp ) ) {
-					return "requires a rounding modifier";
+				if( modifier & (approx | full | ftz) ) {
+					return "approx, full, and ftz are invalid for div.f64";
 				}
-				if( !( modifier & rn ) ) {
-					return "only nearest rounding supported";
+				if( !oneRounding ) {
+					return "div.f64 requires exactly one rounding modifier";
 				}
+			}
+			if( PTXOperand::isInt( type ) && modifier ) {
+				return "integer divide does not accept modifiers";
 			}
 			if( !( type == PTXOperand::u16 || type == PTXOperand::u32 
 				|| type == PTXOperand::u64 || type == PTXOperand::s16 
@@ -2563,7 +2573,7 @@ std::string ir::PTXInstruction::toString() const {
 		}
 		case Div: {
 			std::string result = guard() + "div.";
-			if( divideFull ) {
+			if( modifier & full ) {
 				result += "full.";
 			}
 			result += modifierString( modifier, carry );

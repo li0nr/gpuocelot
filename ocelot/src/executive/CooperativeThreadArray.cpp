@@ -157,6 +157,15 @@ static T roundedMul(T a, T b, int modifier)
 }
 
 template<typename T>
+static T roundedDiv(T a, T b, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = a / b;
+	hydrazine::fesetround(previous);
+	return d;
+}
+
+template<typename T>
 static T roundedFma(T a, T b, T c, int modifier)
 {
 	const int previous = setRoundingMode(modifier);
@@ -4596,18 +4605,21 @@ void executive::CooperativeThreadArray::eval_Div(CTAContext &context,
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a)),
 				b = ftz(instr.modifier, operandAsF32(threadID, instr.b));
 			if(ir::PTXInstruction::approx & instr.modifier) {
-				if(issubnormal_(a) || issubnormal_(b))
-				{
-					d = a / b;
+				if(std::fabs(b) > std::ldexp(1.0f, 126) && !hydrazine::isinf(b)) {
+					if(hydrazine::isinf(a)) {
+						d = std::numeric_limits<ir::PTXF32>::quiet_NaN();
+					} else {
+						const bool negative = std::signbit(a) != std::signbit(b);
+						d = hydrazine::copysign(0.0f, negative ? -1.0f : 1.0f);
+					}
+				} else {
+					d = roundedMul(a, roundedDiv(1.0f, b,
+						ir::PTXInstruction::rn), ir::PTXInstruction::rn);
 				}
-				else
-				{
-					d = a * ( 1.0f / b );
-				}
+			} else {
+				d = roundedDiv(a, b, instr.modifier);
 			}
-			else {
-				d = ftz(instr.modifier, a / b);
-			}
+			d = ftz(instr.modifier, d);
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -4617,7 +4629,7 @@ void executive::CooperativeThreadArray::eval_Div(CTAContext &context,
 
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a),
 				b = operandAsF64(threadID, instr.b);
-			d = a / b;
+			d = roundedDiv(a, b, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}

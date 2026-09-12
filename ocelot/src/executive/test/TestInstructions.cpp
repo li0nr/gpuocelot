@@ -2117,8 +2117,17 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rn;
 			ins.a = reg("r1", PTXOperand::f32, 0);
+			ins.b = reg("r2", PTXOperand::f32, 1);
 			ins.d = reg("r3", PTXOperand::f32, 2);
+			if (!ins.valid().empty()) { status << ins.valid() << "\n"; return false; }
+			PTXInstruction invalid = ins;
+			invalid.modifier = 0;
+			if (invalid.valid().empty()) {
+				status << "div.f32 accepted without a mode\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF32(i, 0, (PTXF32)(i * 8 + 8));
@@ -2142,7 +2151,14 @@ public:
 		if (result) {
 			ins.type = PTXOperand::f64;
 			ins.a = reg("r1", PTXOperand::f64, 0);
+			ins.b = reg("r2", PTXOperand::f64, 1);
 			ins.d = reg("r3", PTXOperand::f64, 2);
+			PTXInstruction invalid = ins;
+			invalid.modifier |= PTXInstruction::ftz;
+			if (invalid.valid().empty()) {
+				status << "div.ftz.f64 accepted\n";
+				return false;
+			}
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF64(i, 0, (PTXF64)(i * 8 + 8));
@@ -2151,7 +2167,7 @@ public:
 			}
 			cta->eval_Div(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXF32 expected = ((PTXF64)(i * 8 + 8) / (PTXF64)(4 + i));
+				PTXF64 expected = ((PTXF64)(i * 8 + 8) / (PTXF64)(4 + i));
 				if (std::fabs(cta->getRegAsF64(i, 2) - expected) > 0.1) {
 					result = false;
 					status << "div.f64 incorrect [" << i << "] - expected: " << expected 
@@ -2159,6 +2175,81 @@ public:
 					break;
 				}
 			}
+		}
+
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz,
+			PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 expected[][2] = {{0x3dcccccd, 0xbdcccccd},
+			{0x3dcccccc, 0xbdcccccc}, {0x3dcccccc, 0xbdcccccd},
+			{0x3dcccccd, 0xbdcccccc}};
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.d.type = PTXOperand::f32;
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			cta->setRegAsF32(0, 0, 1.0f);
+			cta->setRegAsF32(0, 1, 10.0f);
+			cta->setRegAsF32(1, 0, -1.0f);
+			cta->setRegAsF32(1, 1, 10.0f);
+			cta->eval_Div(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != expected[i][0]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != expected[i][1]) {
+				status << "div.f32 rounding failed\n";
+				return false;
+			}
+		}
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.b.type = ins.d.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::rz;
+		cta->setRegAsF64(0, 0, 1.0);
+		cta->setRegAsF64(0, 1, 10.0);
+		cta->eval_Div(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2))
+			!= 0x3fb9999999999999ull) return false;
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.b.type = ins.d.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		cta->setRegAsF32(0, 0, 1.0f);
+		cta->setRegAsF32(1, 0, -1.0f);
+		cta->setRegAsF32(2, 0, std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(3, 0, std::numeric_limits<PTXF32>::quiet_NaN());
+		for (int i = 0; i < 4; ++i) {
+			cta->setRegAsF32(i, 1, std::numeric_limits<PTXF32>::max());
+		}
+		cta->eval_Div(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != 0x80000000
+			|| !hydrazine::isnan(cta->getRegAsF32(2, 2))
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(3, 2)) != 0) {
+			status << "div.approx.f32 large divisor behavior failed\n";
+			return false;
+		}
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::denorm_min());
+		cta->setRegAsF32(0, 1, 1.0f);
+		cta->eval_Div(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 1) {
+			status << "div.approx.f32 flushed a subnormal without ftz\n";
+			return false;
+		}
+
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->setRegAsF32(0, 0, -std::numeric_limits<PTXF32>::denorm_min());
+		cta->setRegAsF32(0, 1, 1.0f);
+		cta->eval_Div(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0x80000000) {
+			status << "div.approx.ftz.f32 input flushing failed\n";
+			return false;
+		}
+
+		ins.modifier = PTXInstruction::full | PTXInstruction::ftz;
+		if (!ins.valid().empty()) return false;
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::min());
+		cta->setRegAsF32(0, 1, 2.0f);
+		cta->eval_Div(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0) {
+			status << "div.full.ftz.f32 result flushing failed\n";
+			return false;
 		}
 
 		return result;

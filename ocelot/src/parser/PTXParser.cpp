@@ -1810,7 +1810,7 @@ namespace parser
 
 	void PTXParser::State::full()
 	{
-		statement.instruction.divideFull = true;
+		statement.instruction.modifier |= ir::PTXInstruction::full;
 	}
 
 	void PTXParser::State::modifier( int token )

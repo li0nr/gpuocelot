@@ -525,9 +525,6 @@ namespace ir {
 			/*! Indicates whether the target address space is volatile */
 			Volatility volatility;
 						
-			/*! Is this a divide full instruction? */
-			bool divideFull;
-			
 			/*! If cvta instruction, indicates whether destination is 
 				generic address or if source is generic address - true if 
 				segmented address space, false if generic */

@@ -1215,15 +1215,12 @@ divApproxModifier : TOKEN_APPROX optionalFtz
 	state.modifier($<value>1);
 };
 
-divRnModifier : TOKEN_RN optionalFtz
-{
-	state.modifier($<value>1);
-};
+divRoundingModifier : floatRounding optionalFtz;
 
-divRnModifier : /* empty string */;
+divRoundingModifier : /* empty string */;
 
 divModifier : divFullModifier | divApproxModifier 
-	| divRnModifier;
+	| divRoundingModifier;
 
 div : OPCODE_DIV divModifier dataType operand ',' operand ',' operand ';'
 {
