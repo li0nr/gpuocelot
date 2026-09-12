@@ -1032,7 +1032,7 @@ public:
 			for (int i = 0; i < threadCount; i++) {
 				PTXU16 a = (i * 2), b = (4 + i), c = 2;
 				PTXU16 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsU16(i, 2) != expected) {
+				if (cta->getRegAsU16(i, 3) != expected) {
 					result = false;
 					status << "sad.u16 incorrect\n";
 					break;
@@ -1059,7 +1059,7 @@ public:
 			for (int i = 0; i < threadCount; i++) {
 				PTXU32 a = (i * 2), b = (4 + i), c = 2;
 				PTXU32 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsU32(i, 2) != expected) {
+				if (cta->getRegAsU32(i, 3) != expected) {
 					result = false;
 					status << "sad.u32 incorrect\n";
 					break;
@@ -1086,7 +1086,7 @@ public:
 			for (int i = 0; i < threadCount; i++) {
 				PTXU64 a = (i * 2), b = (4 + i), c = 2;
 				PTXU64 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsU64(i, 2) != expected) {
+				if (cta->getRegAsU64(i, 3) != expected) {
 					result = false;
 					status << "sad.u64 incorrect\n";
 					break;
@@ -1104,16 +1104,16 @@ public:
 			ins.d = reg("r4", PTXOperand::s16, 3);
 
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS16(i, 0, (PTXS16)(i * 2));
+				cta->setRegAsS16(i, 0, (PTXS16)(-i * 2));
 				cta->setRegAsS16(i, 1, (PTXS16)(4 + i));
 				cta->setRegAsS16(i, 2, 2);
 				cta->setRegAsS16(i, 3, 0);
 			}
 			cta->eval_Sad(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS16 a = (i * 2), b = (4 + i), c = 2;
+				PTXS16 a = (-i * 2), b = (4 + i), c = 2;
 				PTXS16 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsS16(i, 2) != expected) {
+				if (cta->getRegAsS16(i, 3) != expected) {
 					result = false;
 					status << "sad.s16 incorrect\n";
 					break;
@@ -1131,16 +1131,16 @@ public:
 			ins.d = reg("r4", PTXOperand::s32, 3);
 
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS32(i, 0, (PTXS32)(i * 2));
+				cta->setRegAsS32(i, 0, (PTXS32)(-i * 2));
 				cta->setRegAsS32(i, 1, (PTXS32)(4 + i));
 				cta->setRegAsS32(i, 2, 2);
 				cta->setRegAsS32(i, 3, 0);
 			}
 			cta->eval_Sad(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS32 a = (i * 2), b = (4 + i), c = 2;
+				PTXS32 a = (-i * 2), b = (4 + i), c = 2;
 				PTXS32 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsS32(i, 2) != expected) {
+				if (cta->getRegAsS32(i, 3) != expected) {
 					result = false;
 					status << "sad.s32 incorrect\n";
 					break;
@@ -1152,22 +1152,22 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::s64;
-			ins.a = reg("r1", PTXOperand::u64, 0);
-			ins.b = reg("r2", PTXOperand::u64, 1);
-			ins.c = reg("r3", PTXOperand::u64, 2);
-			ins.d = reg("r4", PTXOperand::u64, 3);
+			ins.a = reg("r1", PTXOperand::s64, 0);
+			ins.b = reg("r2", PTXOperand::s64, 1);
+			ins.c = reg("r3", PTXOperand::s64, 2);
+			ins.d = reg("r4", PTXOperand::s64, 3);
 
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS64(i, 0, (PTXS64)(i * 2));
+				cta->setRegAsS64(i, 0, (PTXS64)(-i * 2));
 				cta->setRegAsS64(i, 1, (PTXS64)(4 + i));
 				cta->setRegAsS64(i, 2, 2);
 				cta->setRegAsS64(i, 3, 0);
 			}
 			cta->eval_Sad(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS64 a = (i * 2), b = (4 + i), c = 2;
+				PTXS64 a = (-i * 2), b = (4 + i), c = 2;
 				PTXS64 expected = c + ((a < b) ? b-a : a-b);
-				if (cta->getRegAsS64(i, 2) != expected) {
+				if (cta->getRegAsS64(i, 3) != expected) {
 					result = false;
 					status << "sad.s64 incorrect\n";
 					break;
@@ -5824,6 +5824,7 @@ public:
 			result = (result && test_Div());
 			result = (result && test_Neg());
 			result = (result && test_Rem());
+			result = (result && test_Sad());
 			result = (result && test_Min());
 			result = (result && test_Max());
 			if (prolix && result) {

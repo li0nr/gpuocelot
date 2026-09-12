@@ -1789,7 +1789,7 @@ std::string ir::PTXInstruction::valid() const {
 					+ " cannot be assigned to " + PTXOperand::toString( type );
 			}
 			if( !PTXOperand::valid( type, c.type )  ) {
-				return "operand C type " + PTXOperand::toString( b.type ) 
+				return "operand C type " + PTXOperand::toString( c.type )
 					+ " cannot be assigned to " + PTXOperand::toString( type );
 			}
 			break;		
