@@ -111,6 +111,15 @@ static T CTAAbs(T a) {
 	return a;
 }
 
+template <typename T>
+static T CTARemainder(T a, T b) {
+	if (b == 0) {
+		report("warning: rem by zero is unspecified by PTX; Ocelot returns 0");
+		return 0;
+	}
+	return a % b;
+}
+
 template<typename T>
 bool issubnormal_(T r0)
 {
@@ -7135,11 +7144,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXS16 d, a = operandAsS16(threadID, instr.a),
 				b = operandAsS16(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsS16(threadID, instr.d.reg, d);
 		}
 	}
@@ -7149,11 +7154,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXS32 d, a = operandAsS32(threadID, instr.a),
 				b = operandAsS32(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsS32(threadID, instr.d.reg, d);
 		}
 	}
@@ -7163,11 +7164,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXS64 d, a = operandAsS64(threadID, instr.a),
 				b = operandAsS64(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsS64(threadID, instr.d.reg, d);
 		}
 	}
@@ -7177,11 +7174,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXU16 d, a = operandAsU16(threadID, instr.a),
 				b = operandAsU16(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsU16(threadID, instr.d.reg, d);
 		}
 	}
@@ -7191,11 +7184,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXU32 d, a = operandAsU32(threadID, instr.a),
 				b = operandAsU32(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsU32(threadID, instr.d.reg, d);
 		}
 	}
@@ -7205,11 +7194,7 @@ void executive::CooperativeThreadArray::eval_Rem(CTAContext &context,
 
 			ir::PTXU64 d, a = operandAsU64(threadID, instr.a),
 				b = operandAsU64(threadID, instr.b);
-			if(b == 0) {
-				throw RuntimeException("Modulus by zero at: "
-					+ kernel->location(context.PC), context.PC, instr);
-			}
-			d = a % b;
+			d = CTARemainder(a, b);
 			setRegAsU64(threadID, instr.d.reg, d);
 		}
 	}

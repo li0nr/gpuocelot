@@ -1825,12 +1825,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsU16(i, 0, (PTXU16)(i * 8 + 8));
-				cta->setRegAsU16(i, 1, (PTXU16)(4 + i));
+				cta->setRegAsU16(i, 1, i == 0 ? 0 : (PTXU16)(4 + i));
 				cta->setRegAsU16(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU16 expected = ((i * 8 + 8) % (4 + i));
+				PTXU16 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsU16(i, 2) != expected) {
 					result = false;
 					status << "rem.u16 incorrect\n";
@@ -1849,12 +1849,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsU32(i, 0, (PTXU32)(i * 8 + 8));
-				cta->setRegAsU32(i, 1, (PTXU32)(4 + i));
+				cta->setRegAsU32(i, 1, i == 0 ? 0 : (PTXU32)(4 + i));
 				cta->setRegAsU32(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU32 expected = ((i * 8 + 8) % (4 + i));
+				PTXU32 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsU32(i, 2) != expected) {
 					result = false;
 					status << "rem.u32 incorrect\n";
@@ -1873,12 +1873,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsU64(i, 0, (PTXU64)(i * 8 + 8));
-				cta->setRegAsU64(i, 1, (PTXU64)(4 + i));
+				cta->setRegAsU64(i, 1, i == 0 ? 0 : (PTXU64)(4 + i));
 				cta->setRegAsU64(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU64 expected = ((i * 8 + 8) % (4 + i));
+				PTXU64 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsU64(i, 2) != expected) {
 					result = false;
 					status << "rem.u64 incorrect\n";
@@ -1897,12 +1897,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsS16(i, 0, (PTXS16)(i * 8 + 8));
-				cta->setRegAsS16(i, 1, (PTXS16)(4 + i));
+				cta->setRegAsS16(i, 1, i == 0 ? 0 : (PTXS16)(4 + i));
 				cta->setRegAsS16(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS16 expected = ((i * 8 + 8) % (4 + i));
+				PTXS16 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsS16(i, 2) != expected) {
 					result = false;
 					status << "rem.s16 incorrect\n";
@@ -1921,12 +1921,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsS32(i, 0, (PTXS32)(i * 8 + 8));
-				cta->setRegAsS32(i, 1, (PTXS32)(4 + i));
+				cta->setRegAsS32(i, 1, i == 0 ? 0 : (PTXS32)(4 + i));
 				cta->setRegAsS32(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS32 expected = ((i * 8 + 8) % (4 + i));
+				PTXS32 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsS32(i, 2) != expected) {
 					result = false;
 					status << "rem.s32 incorrect\n";
@@ -1945,12 +1945,12 @@ public:
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsS64(i, 0, (PTXS64)(i * 8 + 8));
-				cta->setRegAsS64(i, 1, (PTXS64)(4 + i));
+				cta->setRegAsS64(i, 1, i == 0 ? 0 : (PTXS64)(4 + i));
 				cta->setRegAsS64(i, 2, 0);
 			}
 			cta->eval_Rem(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS64 expected = ((i * 8 + 8) % (4 + i));
+				PTXS64 expected = i == 0 ? 0 : ((i * 8 + 8) % (4 + i));
 				if (cta->getRegAsS64(i, 2) != expected) {
 					result = false;
 					status << "rem.s64 incorrect\n";
