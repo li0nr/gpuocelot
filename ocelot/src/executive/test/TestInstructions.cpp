@@ -4372,6 +4372,67 @@ public:
 		return result;
 	}
 
+	bool test_Shr() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Shr;
+		ins.d = reg("r3", PTXOperand::u32, 0);
+		ins.a = reg("r1", PTXOperand::u32, 1);
+		ins.b = reg("r2", PTXOperand::u32, 2);
+		if (!ins.valid().empty()) {
+			status << "valid shr.u32 rejected: " << ins.valid() << "\n";
+			return false;
+		}
+
+		PTXInstruction invalid = ins;
+		invalid.d = reg("rd", PTXOperand::u64, 0);
+		invalid.a = reg("ra", PTXOperand::u64, 1);
+		if (invalid.valid().empty()) {
+			status << "shr.u32 accepted 64-bit operands\n";
+			return false;
+		}
+		invalid = ins;
+		invalid.b = reg("rf", PTXOperand::f32, 2);
+		if (invalid.valid().empty()) {
+			status << "shr.u32 accepted an f32 shift operand\n";
+			return false;
+		}
+
+		cta->reset();
+		ins.type = PTXOperand::u32;
+		for (int t = 0; t < threadCount; t++) {
+			cta->setRegAsU32(t, 1, 0x80000000u);
+			cta->setRegAsU32(t, 2, 31 + t % 3);
+		}
+		cta->eval_Shr(cta->getActiveContext(), ins);
+		for (int t = 0; t < threadCount; t++) {
+			const PTXU32 shift = 31 + t % 3;
+			const PTXU32 expected = shift == 31 ? 1 : 0;
+			const PTXU32 got = cta->getRegAsU32(t, 0);
+			if (got != expected) {
+				status << "shr.u32 failed (thread " << t << "): expected "
+					<< expected << ", got " << got << "\n";
+				return false;
+			}
+		}
+
+		ins.type = PTXOperand::s32;
+		ins.d.type = ins.a.type = PTXOperand::s32;
+		for (int t = 0; t < threadCount; t++) {
+			cta->setRegAsS32(t, 1, t & 1 ? INT_MIN : INT_MAX);
+		}
+		cta->eval_Shr(cta->getActiveContext(), ins);
+		for (int t = 0; t < threadCount; t++) {
+			const PTXS32 expected = t & 1 ? -1 : 0;
+			const PTXS32 got = cta->getRegAsS32(t, 0);
+			if (got != expected) {
+				status << "shr.s32 failed (thread " << t << "): expected "
+					<< expected << ", got " << got << "\n";
+				return false;
+			}
+		}
+		return true;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	//
 	// Load, store
@@ -6005,6 +6066,7 @@ public:
 			result = (result && test_Xor());
 			result = (result && test_Not());
 			result = (result && test_Shl());
+			result = (result && test_Shr());
 			if (prolix && result) {
 				status << "pass: logical instructions\n";
 			}

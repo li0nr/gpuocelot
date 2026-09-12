@@ -1145,11 +1145,6 @@ std::string testLops_PTX(ir::PTXInstruction::Opcode opcode,
 			ptx << "\tld.global.u32 %r1, [%rIn + " 
 				<< std::max((size_t)ir::PTXOperand::bytes(type), sizeof(uint32_t)) 
 				<< "];              \n";
-			if( opcode == ir::PTXInstruction::Shr )
-			{
-				ptx << "\trem.u32 %r1, %r1, "
-					<< 8 * ir::PTXOperand::bytes(type) << ";\n";
-			}
 		}
 		else if(opcode == ir::PTXInstruction::And
 			|| opcode == ir::PTXInstruction::Or
@@ -1267,7 +1262,8 @@ void testLops_REF(void* output, void* input)
 			r0 = r0 < 64;
 		}
 
-		type d = r0 >> (r1 % (sizeof(type) * 8));
+		type d = r1 >= sizeof(type) * 8
+			? (r0 < 0 ? -1 : 0) : r0 >> r1;
 		
 		setParameter(output, 0, d);
 		break;
@@ -6887,6 +6883,21 @@ namespace test
 			testLops_REF<ir::PTXInstruction::Shl, uint64_t>,
 			testLops_PTX(ir::PTXInstruction::Shl, ir::PTXOperand::b64),
 			testLops_OUT(I64), testLops_IN(ir::PTXInstruction::Shl, I64),
+			uniformRandom<uint64_t, 3>, 1, 1);
+
+		add("TestShr-b16",
+			testLops_REF<ir::PTXInstruction::Shr, uint16_t>,
+			testLops_PTX(ir::PTXInstruction::Shr, ir::PTXOperand::b16),
+			testLops_OUT(I16), testLops_IN(ir::PTXInstruction::Shr, I16),
+			uniformRandom<uint16_t, 4>, 1, 1);
+		add("TestShr-b32", testLops_REF<ir::PTXInstruction::Shr, uint32_t>,
+			testLops_PTX(ir::PTXInstruction::Shr, ir::PTXOperand::b32),
+			testLops_OUT(I32), testLops_IN(ir::PTXInstruction::Shr, I32),
+			uniformRandom<uint32_t, 3>, 1, 1);
+		add("TestShr-b64",
+			testLops_REF<ir::PTXInstruction::Shr, uint64_t>,
+			testLops_PTX(ir::PTXInstruction::Shr, ir::PTXOperand::b64),
+			testLops_OUT(I64), testLops_IN(ir::PTXInstruction::Shr, I64),
 			uniformRandom<uint64_t, 3>, 1, 1);
 
 		add("TestShr-u16",
