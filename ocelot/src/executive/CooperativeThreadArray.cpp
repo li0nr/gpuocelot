@@ -8404,11 +8404,7 @@ void executive::CooperativeThreadArray::eval_Shl(CTAContext &context, const ir::
 				throw RuntimeException("unsupported data type",
 					context.PC, instr);
 			}
-			if( b > 16 )
-			{
-				b = 16;
-			}
-			d = a << b;
+			d = b >= 16 ? 0 : a << b;
 			setRegAsB16(threadID, instr.d.reg, d);
 		}
 	}
@@ -8437,11 +8433,7 @@ void executive::CooperativeThreadArray::eval_Shl(CTAContext &context, const ir::
 				throw RuntimeException("unsupported data type",
 					context.PC, instr);
 			}
-			if( b > 32 )
-			{
-				b = 32;
-			}
-			d = a << b;
+			d = b >= 32 ? 0 : a << b;
 			setRegAsB32(threadID, instr.d.reg, d);
 		}
 	}
@@ -8470,11 +8462,7 @@ void executive::CooperativeThreadArray::eval_Shl(CTAContext &context, const ir::
 				throw RuntimeException("unsupported data type",
 					context.PC, instr);
 			}
-			if( b > 64 )
-			{
-				b = 64;
-			}
-			d = a << b;
+			d = b >= 64 ? 0 : a << b;
 			setRegAsB64(threadID, instr.d.reg, d);
 		}
 	}
