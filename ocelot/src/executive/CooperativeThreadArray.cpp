@@ -8360,10 +8360,11 @@ void executive::CooperativeThreadArray::eval_Shf(CTAContext &context, const ir::
             throw RuntimeException("unsupported shift mode", context.PC, instr);
         }
 
+        const ir::PTXB64 pair = (static_cast<ir::PTXB64>(b) << 32) | a;
         if (instr.shiftDirection == ir::PTXInstruction::ShiftLeft) {
-            d = (b << n) | (a >> (32 - n));
+            d = (pair << n) >> 32;
         } else if (instr.shiftDirection == ir::PTXInstruction::ShiftRight) {
-            d = (b << (32 - n)) | (a >> n);
+            d = pair >> n;
         } else {
             throw RuntimeException("unsupported shift direction", context.PC, instr);
         }

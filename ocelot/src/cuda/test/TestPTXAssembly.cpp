@@ -1021,15 +1021,6 @@ std::string testShf_PTX(
     ptx << "\tld.global.u32 %r2, [%rIn + "
         << 2 * ir::PTXOperand::bytes(ir::PTXOperand::b32) << "];     \n";
 
-    if (mode == ir::PTXInstruction::ShiftMode::Wrap)
-    {
-        ptx << "\tand.b32 %r2, %r2, 31;                      \n";  // Wrap mode: limit to 5 bits
-    }
-    else if (mode == ir::PTXInstruction::ShiftMode::Clamp)
-    {
-        ptx << "\tmin.u32 %r2, %r2, 32;                      \n";  // Clamp mode: cap at 32
-    }
-
     ptx << "\tshf" << directionString << modeString << typeString 
         << " %r3, %r0, %r1, %r2;                       \n";
 
@@ -1066,14 +1057,15 @@ void testShf_REF(void* output, void* input)
         c = (c > 32) ? 32 : c; // Clamp mode: limit to 32
     }
 
+    const uint64_t pair = (static_cast<uint64_t>(b) << 32) | a;
     U32 result;
     if (direction == ir::PTXInstruction::ShiftLeft)
     {
-        result = (b << c) | (a >> (32 - c));
+        result = (pair << c) >> 32;
     }
     else if (direction == ir::PTXInstruction::ShiftRight)
     {
-        result = (b << (32 - c)) | (a >> c);
+        result = pair >> c;
     }
     else
     {

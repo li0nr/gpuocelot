@@ -1933,10 +1933,9 @@ std::string ir::PTXInstruction::valid() const {
 				stream << "second source operand must be 32-bit, got " << b.bytes() << " bytes";
 				return stream.str();
 			}
-			if ( c.bytes() != 4 && c.addressMode != PTXOperand::Immediate ) {
-				std::stringstream stream;
-				stream << "shift amount must be 32-bit, got " << c.bytes() << " bytes";
-				return stream.str();
+			if ( c.addressMode != PTXOperand::Immediate
+				&& !PTXOperand::valid( PTXOperand::u32, c.type ) ) {
+				return "shift amount must have a 32-bit integer type";
 			}
 			break;
 		}

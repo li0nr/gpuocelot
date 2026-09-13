@@ -4372,6 +4372,63 @@ public:
 		return result;
 	}
 
+	bool test_Shf() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Shf;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("r4", PTXOperand::b32, 0);
+		ins.a = reg("r1", PTXOperand::b32, 1);
+		ins.b = reg("r2", PTXOperand::b32, 2);
+		ins.c = reg("r3", PTXOperand::u32, 3);
+		if (!ins.valid().empty()) {
+			status << "valid shf rejected: " << ins.valid() << "\n";
+			return false;
+		}
+		PTXInstruction invalid = ins;
+		invalid.c = reg("f1", PTXOperand::f32, 3);
+		if (invalid.valid().empty()) {
+			status << "shf accepted an f32 shift operand\n";
+			return false;
+		}
+
+		const PTXB32 a = 0x12345678u;
+		const PTXB32 b = 0xabcdef01u;
+		for (int mode = 0; mode < 2; ++mode) {
+			ins.shiftMode = mode == 0 ? PTXInstruction::ShiftMode::Wrap
+				: PTXInstruction::ShiftMode::Clamp;
+			for (int direction = 0; direction < 2; ++direction) {
+				ins.shiftDirection = direction == 0
+					? PTXInstruction::ShiftLeft : PTXInstruction::ShiftRight;
+				cta->reset();
+				for (int t = 0; t < threadCount; ++t) {
+					cta->setRegAsB32(t, 1, a);
+					cta->setRegAsB32(t, 2, b);
+					cta->setRegAsU32(t, 3, 31 + t % 4);
+				}
+				cta->eval_Shf(cta->getActiveContext(), ins);
+				for (int t = 0; t < threadCount; ++t) {
+					const PTXU32 c = 31 + t % 4;
+					const PTXU32 n = mode == 0 ? c & 31 : std::min(c, 32u);
+					PTXB32 expected;
+					if (direction == 0) {
+						expected = n == 0 ? b : n == 32 ? a
+							: (b << n) | (a >> (32 - n));
+					} else {
+						expected = n == 0 ? a : n == 32 ? b
+							: (b << (32 - n)) | (a >> n);
+					}
+					const PTXB32 got = cta->getRegAsB32(t, 0);
+					if (got != expected) {
+						status << "shf failed for count " << c << ": expected "
+							<< expected << ", got " << got << "\n";
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
 	bool test_Shr() {
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Shr;
@@ -6065,6 +6122,7 @@ public:
 			result = (result && test_Or());
 			result = (result && test_Xor());
 			result = (result && test_Not());
+			result = (result && test_Shf());
 			result = (result && test_Shl());
 			result = (result && test_Shr());
 			if (prolix && result) {
