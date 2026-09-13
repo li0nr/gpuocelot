@@ -1023,6 +1023,10 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if( type == PTXOperand::f32 && modifier != approx
+				&& modifier != ( approx | ftz ) ) {
+				return "ex2.f32 requires .approx with optional .ftz";
+			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
@@ -1030,12 +1034,6 @@ std::string ir::PTXInstruction::valid() const {
 			if( !PTXOperand::valid( type, d.type )  ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
-			}
-			if( modifier & ftz ) {
-				if( PTXOperand::isInt( type ) ) {
-					return toString( ftz ) 
-						+ " only valid for float point instructions.";
-				}
 			}
 			break;
 		}
@@ -1145,6 +1143,9 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if( modifier != approx && modifier != ( approx | ftz ) ) {
+				return "lg2 requires .approx with optional .ftz";
+			}
 			if( !PTXOperand::valid( type, a.type ) ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
@@ -1152,12 +1153,6 @@ std::string ir::PTXInstruction::valid() const {
 			if( !PTXOperand::valid( type, d.type ) ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
-			}
-			if( modifier & ftz ) {
-				if( PTXOperand::isInt( type ) ) {
-					return toString( ftz ) 
-						+ " only valid for float point instructions.";
-				}
 			}
 			break;
 		}

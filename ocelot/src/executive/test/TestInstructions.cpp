@@ -3259,32 +3259,79 @@ public:
 
 	bool test_Ex2() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_ex2() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  ex2.approx.f32 f0, f1;\n"
+			<< "  ex2.approx.ftz.f32 f0, f1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 ex2 forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Ex2;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx;
 
 		// f32
 		//
 		if (result) {
-			ins.type = PTXOperand::f32;
-			ins.a = reg("r1", PTXOperand::f32, 0);
-			ins.d = reg("r3", PTXOperand::f32, 2);
-
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsF32(i, 0, (PTXF32)((float)i / (float)threadCount * 4.0f));
+				cta->setRegAsF32(i, 0,
+					-4.0f + (PTXF32)i / (PTXF32)threadCount * 8.0f);
 				cta->setRegAsF32(i, 2, 0);
 			}
 			cta->eval_Ex2(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				if (std::fabs(cta->getRegAsF32(i, 2) - (PTXF32)exp2((float)i / (float)threadCount * 4.0f)) > 0.1f) {
+				const PTXF32 value = -4.0f
+					+ (PTXF32)i / (PTXF32)threadCount * 8.0f;
+				const PTXF32 expected = (PTXF32)std::exp2((double)value);
+				const PTXU32 actualBits = hydrazine::bit_cast<PTXU32>(
+					cta->getRegAsF32(i, 2));
+				const PTXU32 expectedBits = hydrazine::bit_cast<PTXU32>(expected);
+				const PTXU32 ulps = actualBits > expectedBits
+					? actualBits - expectedBits : expectedBits - actualBits;
+				if (ulps > 2) {
 					result = false;
-					status << "ex2.f32 incorrect [" << i << "] - expected: " 
-						<< (PTXF32)exp2((float)i / (float)threadCount * 4.0f) 
+					status << "ex2.f32 incorrect [" << i << "] - expected: "
+						<< expected
 						<< ", got " << cta->getRegAsF32(i, 2) << "\n";
 					break;
 				}
 			}
 		}
+
+		cta->setRegAsF32(0, 0, -std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(1, 0, -0.0f);
+		cta->setRegAsF32(2, 0, 0.0f);
+		cta->setRegAsF32(3, 0, std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(4, 0, std::numeric_limits<PTXF32>::quiet_NaN());
+		cta->eval_Ex2(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0
+			|| cta->getRegAsF32(1, 2) != 1.0f
+			|| cta->getRegAsF32(2, 2) != 1.0f
+			|| cta->getRegAsF32(3, 2) != std::numeric_limits<PTXF32>::infinity()
+			|| !hydrazine::isnan(cta->getRegAsF32(4, 2))) return false;
+
+		cta->setRegAsF32(0, 0, -149.0f);
+		cta->eval_Ex2(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 1) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->eval_Ex2(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0) return false;
 
 		return result;
 	}
@@ -3680,33 +3727,83 @@ public:
 
 	bool test_Lg2() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_lg2() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  lg2.approx.f32 f0, f1;\n"
+			<< "  lg2.approx.ftz.f32 f0, f1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 lg2 forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Lg2;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx;
 
 		// f32
 		//
 		if (result) {
-			ins.type = PTXOperand::f32;
-			ins.a = reg("r1", PTXOperand::f32, 0);
-			ins.d = reg("r3", PTXOperand::f32, 2);
-
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsF32(i, 0, (PTXF32)(0.5f + (float)i / (float)threadCount * 4.0f));
+				const PTXF32 value = 0.51f
+					+ (PTXF32)i / (PTXF32)threadCount * 1.48f;
+				cta->setRegAsF32(i, 0, value);
 				cta->setRegAsF32(i, 2, 0);
 			}
 			cta->eval_Lg2(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				if (std::fabs(cta->getRegAsF32(i, 2) - (PTXF32)log2(0.5f + (float)i / (float)threadCount * 4.0f)) > 0.1f) {
+				const PTXF32 value = 0.51f
+					+ (PTXF32)i / (PTXF32)threadCount * 1.48f;
+				const double expected = std::log2((double)value);
+				if (std::fabs(cta->getRegAsF32(i, 2) - expected)
+					> std::ldexp(1.0, -22)) {
 					result = false;
-					status << "lg2.f32 incorrect [" << i 
-						<< "] - log2(" << (0.5f + (float)i / (float)threadCount * 4.0f) << ") - expected: " 
-						<< (PTXF32)log2(0.5f + (float)i / (float)threadCount * 4.0f) 
+					status << "lg2.f32 incorrect [" << i
+						<< "] - expected: " << expected
 						<< ", got " << cta->getRegAsF32(i, 2) << "\n";
 					break;
 				}
 			}
 		}
+
+		cta->setRegAsF32(0, 0, -std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(1, 0, -1.0f);
+		cta->setRegAsF32(2, 0, -0.0f);
+		cta->setRegAsF32(3, 0, 0.0f);
+		cta->setRegAsF32(4, 0, std::numeric_limits<PTXF32>::infinity());
+		cta->setRegAsF32(5, 0, std::numeric_limits<PTXF32>::quiet_NaN());
+		cta->eval_Lg2(cta->getActiveContext(), ins);
+		if (!hydrazine::isnan(cta->getRegAsF32(0, 2))
+			|| !hydrazine::isnan(cta->getRegAsF32(1, 2))
+			|| cta->getRegAsF32(2, 2) != -std::numeric_limits<PTXF32>::infinity()
+			|| cta->getRegAsF32(3, 2) != -std::numeric_limits<PTXF32>::infinity()
+			|| cta->getRegAsF32(4, 2) != std::numeric_limits<PTXF32>::infinity()
+			|| !hydrazine::isnan(cta->getRegAsF32(5, 2)))
+			return false;
+
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->eval_Lg2(cta->getActiveContext(), ins);
+		if (std::fabs((cta->getRegAsF32(0, 2) + 149.0) / 149.0)
+			> std::ldexp(1.0, -22)) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->eval_Lg2(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2)
+			!= -std::numeric_limits<PTXF32>::infinity()) return false;
+
 		return result;
 	}
 

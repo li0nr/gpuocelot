@@ -4781,7 +4781,8 @@ void executive::CooperativeThreadArray::eval_Ex2(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 d, a = operandAsF32(threadID, instr.a);
+			ir::PTXF32 d,
+				a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
 			d = ftz(instr.modifier, hydrazine::exp2f(a));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
