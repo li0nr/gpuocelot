@@ -7321,7 +7321,8 @@ void executive::CooperativeThreadArray::eval_Rsqrt(CTAContext &context,
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
-			d = ftz(instr.modifier, 1.0f/(ir::PTXF32)std::sqrt(a));
+			d = ftz(instr.modifier, roundedDiv(1.0f,
+				roundedSqrt(a, ir::PTXInstruction::rn), ir::PTXInstruction::rn));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -7330,7 +7331,25 @@ void executive::CooperativeThreadArray::eval_Rsqrt(CTAContext &context,
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a);
-			d = 1.0/sqrt(a);
+			if (instr.modifier & ir::PTXInstruction::ftz) {
+				const ir::PTXU64 high = 0xffffffff00000000ull;
+				if (hydrazine::isnan(a)) {
+					d = hydrazine::bit_cast<ir::PTXF64>(0x7fffffff00000000ull);
+				} else {
+					a = hydrazine::bit_cast<ir::PTXF64>(
+						hydrazine::bit_cast<ir::PTXU64>(a) & high);
+					if (issubnormal_(a)) a = hydrazine::copysign(0.0, a);
+					d = roundedDiv(1.0,
+						roundedSqrt(a, ir::PTXInstruction::rn),
+						ir::PTXInstruction::rn);
+					if (issubnormal_(d)) d = hydrazine::copysign(0.0, d);
+					d = hydrazine::bit_cast<ir::PTXF64>(
+						hydrazine::bit_cast<ir::PTXU64>(d) & high);
+				}
+			} else {
+				d = roundedDiv(1.0, roundedSqrt(a,
+					ir::PTXInstruction::rn), ir::PTXInstruction::rn);
+			}
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}

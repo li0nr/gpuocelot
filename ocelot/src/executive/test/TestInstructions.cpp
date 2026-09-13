@@ -3775,9 +3775,38 @@ public:
 
 	bool test_Rsqrt() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_rsqrt() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  .reg .f64 d0, d1;\n"
+			<< "  rsqrt.approx.f32 f0, f1;\n"
+			<< "  rsqrt.approx.ftz.f32 f0, f1;\n"
+			<< "  rsqrt.approx.f64 d0, d1;\n"
+			<< "  rsqrt.approx.ftz.f64 d0, d1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 rsqrt forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Rsqrt;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.d.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		if (!ins.valid().empty()) return false;
 
 		double freq = 2.0f / (double)threadCount;
 
@@ -3825,6 +3854,36 @@ public:
 				}
 			}
 		}
+
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.d.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->setRegAsF64(0, 0, 3.0);
+		cta->setRegAsF64(1, 0, std::numeric_limits<PTXF64>::quiet_NaN());
+		cta->setRegAsF64(2, 0, -0.0);
+		cta->setRegAsF64(3, 0, std::numeric_limits<PTXF64>::denorm_min());
+		cta->eval_Rsqrt(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2))
+				!= 0x3fe279a700000000ull
+			|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2))
+				!= 0x7fffffff00000000ull
+			|| cta->getRegAsF64(2, 2)
+				!= -std::numeric_limits<PTXF64>::infinity()
+			|| cta->getRegAsF64(3, 2)
+				!= std::numeric_limits<PTXF64>::infinity()) return false;
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.d.type = PTXOperand::f32;
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::min()
+			- std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 0, subnormal);
+		ins.modifier = PTXInstruction::approx;
+		cta->eval_Rsqrt(cta->getActiveContext(), ins);
+		if (!std::isfinite(cta->getRegAsF32(0, 2))) return false;
+		ins.modifier |= PTXInstruction::ftz;
+		cta->eval_Rsqrt(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2)
+			!= std::numeric_limits<PTXF32>::infinity()) return false;
 
 		return result;
 	}
