@@ -2051,23 +2051,25 @@ std::string ir::PTXInstruction::valid() const {
 			
 		}
 		case Sqrt: {
-			if( ( modifier & approx ) ) {
-				if( type != PTXOperand::f32 ) {
-					return "only f32 supported for approximate";
-				}
-			}
 			if( type != PTXOperand::f32 && type != PTXOperand::f64 ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
-			if( type == PTXOperand::f64 ) {
-				if( !( modifier & rn ) && !( modifier & rz ) 
-					&& !( modifier & rm ) && !( modifier & rp ) ) {
-					return "requires a rounding modifier";
+			const int rounding = modifier & (rn | rz | rm | rp);
+			if( modifier & ~(approx | ftz | rn | rz | rm | rp) ) {
+				return "invalid modifier for sqrt";
+			}
+			if( modifier & approx ) {
+				if( type != PTXOperand::f32 ) {
+					return "sqrt.approx only supports f32";
 				}
-				if( !( modifier & rn ) ) {
-					return "only nearest rounding supported";
-				}
+				if( rounding ) return "sqrt.approx cannot specify rounding";
+			} else if( rounding != rn && rounding != rz
+				&& rounding != rm && rounding != rp ) {
+				return "sqrt requires exactly one rounding modifier";
+			}
+			if( type == PTXOperand::f64 && (modifier & ftz) ) {
+				return "sqrt.rnd.f64 does not support .ftz";
 			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
@@ -2076,12 +2078,6 @@ std::string ir::PTXInstruction::valid() const {
 			if( !PTXOperand::valid( type, d.type ) ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
-			}
-			if( modifier & ftz ) {
-				if( PTXOperand::isInt( type ) ) {
-					return toString( ftz ) 
-						+ " only valid for float point instructions.";
-				}
 			}
 			break;			
 		}

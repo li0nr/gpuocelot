@@ -175,6 +175,15 @@ static T roundedDiv(T a, T b, int modifier)
 }
 
 template<typename T>
+static T roundedSqrt(T a, int modifier)
+{
+	const int previous = setRoundingMode(modifier);
+	T d = std::sqrt(a);
+	hydrazine::fesetround(previous);
+	return d;
+}
+
+template<typename T>
 static T roundedFma(T a, T b, T c, int modifier)
 {
 	const int previous = setRoundingMode(modifier);
@@ -8878,14 +8887,8 @@ void executive::CooperativeThreadArray::eval_Sqrt(CTAContext &context,
 
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
 
-			if(a < 0.0f || hydrazine::isnan(a))
-			{
-				d = std::numeric_limits<float>::signaling_NaN();
-			}
-			else
-			{
-				d = std::sqrt(a);
-			}
+			d = roundedSqrt(a, instr.modifier & ir::PTXInstruction::approx
+				? ir::PTXInstruction::rn : instr.modifier);
 
 			setRegAsF32(threadID, instr.d.reg, ftz(instr.modifier, d));
 		}
@@ -8895,7 +8898,7 @@ void executive::CooperativeThreadArray::eval_Sqrt(CTAContext &context,
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXF64 d, a = operandAsF64(threadID, instr.a);
-			d = sqrt(a);
+			d = roundedSqrt(a, instr.modifier);
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}

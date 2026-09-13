@@ -3648,9 +3648,39 @@ public:
 
 	bool test_Sqrt() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_sqrt() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  .reg .f64 d0, d1;\n"
+			<< "  sqrt.approx.f32 f0, f1;\n"
+			<< "  sqrt.rz.ftz.f32 f0, f1;\n"
+			<< "  sqrt.rp.f64 d0, d1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 sqrt forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Sqrt;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.d.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::rp;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		if (ins.valid().empty()) return false;
 
 		double freq = 2.0f / (double)threadCount;
 
@@ -3698,6 +3728,47 @@ public:
 				}
 			}
 		}
+
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz,
+			PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 expected32[] = {
+			0x3fb504f3u, 0x3fb504f3u, 0x3fb504f3u, 0x3fb504f4u};
+		const PTXU64 expected64[] = {0x3ff6a09e667f3bcdull,
+			0x3ff6a09e667f3bccull, 0x3ff6a09e667f3bccull,
+			0x3ff6a09e667f3bcdull};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			ins.type = PTXOperand::f32;
+			ins.a.type = ins.d.type = PTXOperand::f32;
+			cta->setRegAsF32(0, 0, 2.0f);
+			cta->eval_Sqrt(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2))
+				!= expected32[i]) return false;
+
+			ins.type = PTXOperand::f64;
+			ins.a.type = ins.d.type = PTXOperand::f64;
+			cta->setRegAsF64(0, 0, 2.0);
+			cta->eval_Sqrt(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2))
+				!= expected64[i]) return false;
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.d.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::min()
+			- std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->setRegAsF32(1, 0, -subnormal);
+		cta->eval_Sqrt(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2))
+				!= 0x80000000u) return false;
+
+		ins.modifier = PTXInstruction::approx;
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->eval_Sqrt(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2) == 0.0f) return false;
 
 		return result;
 	}
