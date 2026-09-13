@@ -3130,8 +3130,9 @@ void executive::CooperativeThreadArray::eval_Cos(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 d, a = operandAsF32(threadID, instr.a);
-			d = (ir::PTXF32)cos(a);
+			ir::PTXF32 d,
+				a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
+			d = ftz(instr.modifier, (ir::PTXF32)cos(a));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}
@@ -8804,7 +8805,8 @@ void executive::CooperativeThreadArray::eval_Sin(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 d, a = operandAsF32(threadID, instr.a);
+			ir::PTXF32 d,
+				a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
 			d = ftz(instr.modifier, (ir::PTXF32)sin(a));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}

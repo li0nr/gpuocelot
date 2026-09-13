@@ -3002,18 +3002,37 @@ public:
 
 	bool test_Cos() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_cos() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  cos.approx.f32 f0, f1;\n"
+			<< "  cos.approx.ftz.f32 f0, f1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 cos forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Cos;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx;
 
 		// f32
 		//
 		if (result) {
 			float freq = 2 * 3.14159f / (float)threadCount;
-
-			ins.opcode = PTXInstruction::Cos;
-			ins.type = PTXOperand::f32;
-			ins.a = reg("r1", PTXOperand::f32, 0);
-			ins.d = reg("r3", PTXOperand::f32, 2);
 
 			for (int i = 0; i < threadCount; i++) {
 				cta->setRegAsF32(i, 0, (PTXF32)((float)i * freq));
@@ -3030,14 +3049,45 @@ public:
 				}
 			}
 		}
+
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->setRegAsF32(0, 0, std::numeric_limits<PTXF32>::denorm_min());
+		cta->setRegAsF32(1, 0, -std::numeric_limits<PTXF32>::denorm_min());
+		cta->eval_Cos(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2) != 1.0f
+			|| cta->getRegAsF32(1, 2) != 1.0f) return false;
+
 		return result;
 	}
 
 	bool test_Sin() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_sin() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  sin.approx.f32 f0, f1;\n"
+			<< "  sin.approx.ftz.f32 f0, f1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 sin forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Sin;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx;
 
 		// f32
 		//
@@ -3063,6 +3113,20 @@ public:
 				}
 			}
 		}
+
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->setRegAsF32(1, 0, -subnormal);
+		cta->eval_Sin(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 1
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2))
+				!= 0x80000001u) return false;
+
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->eval_Sin(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2))
+				!= 0x80000000u) return false;
 
 		return result;
 	}
