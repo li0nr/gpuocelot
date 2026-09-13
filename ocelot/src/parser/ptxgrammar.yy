@@ -1422,7 +1422,7 @@ rcpSqrtModifier : TOKEN_APPROX optionalFtz
 };
 
 rcpSqrtModifier : /* empty string */;
-rcpSqrtModifier : TOKEN_RN optionalFtz
+rcpSqrtModifier : floatRoundingToken optionalFtz
 {
 	state.modifier( $<value>1 );
 };

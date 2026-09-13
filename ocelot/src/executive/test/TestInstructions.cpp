@@ -2847,9 +2847,43 @@ public:
 
 	bool test_Rcp() {
 		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_rcp() {\n"
+			<< "  .reg .f32 f0, f1;\n"
+			<< "  .reg .f64 d0, d1;\n"
+			<< "  rcp.approx.f32 f0, f1;\n"
+			<< "  rcp.rz.ftz.f32 f0, f1;\n"
+			<< "  rcp.rp.f64 d0, d1;\n"
+			<< "  rcp.approx.ftz.f64 d0, d1;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse PTX 8.0 rcp forms: " << error.what() << "\n";
+			return false;
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Rcp;
+		ins.type = PTXOperand::f32;
+		ins.a = reg("r1", PTXOperand::f32, 0);
+		ins.d = reg("r3", PTXOperand::f32, 2);
+		ins.modifier = PTXInstruction::approx;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = 0;
+		if (ins.valid().empty()) {
+			status << "rcp.f32 accepted without .approx or rounding mode\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::approx | PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::f64;
+		ins.a.type = ins.d.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		if (!ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::approx;
+		if (ins.valid().empty()) return false;
 
 		double freq = 2.0f / (double)threadCount;
 
@@ -2857,6 +2891,7 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rn;
 			ins.a = reg("r1", PTXOperand::f32, 0);
 			ins.d = reg("r3", PTXOperand::f32, 2);
 
@@ -2880,6 +2915,7 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::f64;
+			ins.modifier = PTXInstruction::rn;
 			ins.a = reg("r1", PTXOperand::f64, 0);
 			ins.d = reg("r3", PTXOperand::f64, 2);
 
@@ -2896,6 +2932,69 @@ public:
 					break;
 				}
 			}
+		}
+
+		const int modes[] = {PTXInstruction::rn, PTXInstruction::rz,
+			PTXInstruction::rm, PTXInstruction::rp};
+		const PTXU32 expected32[][2] = {
+			{0x3dcccccdu, 0xbdcccccdu}, {0x3dccccccu, 0xbdccccccu},
+			{0x3dccccccu, 0xbdcccccdu}, {0x3dcccccdu, 0xbdccccccu}
+		};
+		const PTXU64 expected64[][2] = {
+			{0x3fb999999999999aull, 0xbfb999999999999aull},
+			{0x3fb9999999999999ull, 0xbfb9999999999999ull},
+			{0x3fb9999999999999ull, 0xbfb999999999999aull},
+			{0x3fb999999999999aull, 0xbfb9999999999999ull}
+		};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.modifier = modes[i];
+			ins.type = PTXOperand::f32;
+			ins.a.type = ins.d.type = PTXOperand::f32;
+			cta->setRegAsF32(0, 0, 10.0f);
+			cta->setRegAsF32(1, 0, -10.0f);
+			cta->eval_Rcp(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != expected32[i][0]
+				|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != expected32[i][1]) {
+				status << "rcp.f32 rounding failed\n";
+				return false;
+			}
+
+			ins.type = PTXOperand::f64;
+			ins.a.type = ins.d.type = PTXOperand::f64;
+			cta->setRegAsF64(0, 0, 10.0);
+			cta->setRegAsF64(1, 0, -10.0);
+			cta->eval_Rcp(cta->getActiveContext(), ins);
+			if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2)) != expected64[i][0]
+				|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2)) != expected64[i][1]) {
+				status << "rcp.f64 rounding failed\n";
+				return false;
+			}
+		}
+
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->setRegAsF64(0, 0, 3.0);
+		cta->setRegAsF64(1, 0, std::numeric_limits<PTXF64>::quiet_NaN());
+		cta->eval_Rcp(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(0, 2))
+			!= 0x3fd5555500000000ull
+			|| hydrazine::bit_cast<PTXU64>(cta->getRegAsF64(1, 2))
+				!= 0x7fffffff00000000ull) {
+			status << "rcp.approx.ftz.f64 failed\n";
+			return false;
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.a.type = ins.d.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::approx;
+		const PTXF32 subnormal = std::numeric_limits<PTXF32>::min()
+			- std::numeric_limits<PTXF32>::denorm_min();
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->setRegAsF32(1, 0, -subnormal);
+		cta->eval_Rcp(cta->getActiveContext(), ins);
+		if (cta->getRegAsF32(0, 2) != std::numeric_limits<PTXF32>::infinity()
+			|| cta->getRegAsF32(1, 2) != -std::numeric_limits<PTXF32>::infinity()) {
+			status << "rcp.approx.f32 subnormal input failed\n";
+			return false;
 		}
 
 		return result;

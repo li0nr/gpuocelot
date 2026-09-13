@@ -1654,17 +1654,24 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
-			if( type == PTXOperand::f64 ) {
-				if( modifier & ftz ) {
-					if( !( modifier & approx ) ) {
-						return "requires .approx.ftz for f64";
-					}
+			const int rounding = modifier & (rn | rz | rm | rp);
+			if( modifier & ~(approx | ftz | rn | rz | rm | rp) ) {
+				return "invalid modifier for rcp";
+			}
+			if( type == PTXOperand::f64 && (modifier & approx) ) {
+				if( modifier != (approx | ftz) ) {
+					return "rcp.approx.f64 requires .ftz and no rounding modifier";
 				}
-				else if ( !( modifier & rn ) && !( modifier & rz ) 
-					&& !( modifier & rm ) && !( modifier & rp ) ) {
-					return "rounding mode required";
+			} else {
+				if( modifier & approx ) {
+					if( rounding ) return "rcp.approx.f32 cannot specify rounding";
+				} else if( rounding != rn && rounding != rz
+					&& rounding != rm && rounding != rp ) {
+					return "rcp requires exactly one rounding modifier";
 				}
-			
+				if( type == PTXOperand::f64 && (modifier & ftz) ) {
+					return "rcp.rnd.f64 does not support .ftz";
+				}
 			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
@@ -1673,12 +1680,6 @@ std::string ir::PTXInstruction::valid() const {
 			if( !PTXOperand::valid( type, d.type )  ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
-			}
-			if( modifier & ftz ) {
-				if( PTXOperand::isInt( type ) ) {
-					return toString( ftz ) 
-						+ " only valid for float point instructions.";
-				}
 			}
 			break;
 		}
