@@ -9618,7 +9618,7 @@ void executive::CooperativeThreadArray::eval_TestP(CTAContext &context,
 			break;
 			case ir::PTXInstruction::SubNormal:
 			{
-				d = !hydrazine::isnormal(a) && !hydrazine::isnan(a) && !hydrazine::isinf(a);
+				d = issubnormal_(a);
 			}
 			break;
 			default: assertM(false, "Invalid floating point mode.");

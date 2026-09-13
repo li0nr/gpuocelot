@@ -6275,67 +6275,39 @@ public:
 	}
 	
 	bool test_TestP() {
-		bool result = false;
-		/*
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::TestP;
-
+		ins.d = reg("p", PTXOperand::pred, 0);
 		cta->reset();
-
-		// f32
-		//
-		if (result) {
-			// testp.op.type p, a
-			//
-			//	op: .finite, .infinite, .number, .notanumber, .normal, .subnormal
-			//	type: .f32, .f64
-			//
-			ins.type = PTXOperand::f32;
-			ins.d = reg("p", PTXOperand::pred, 0);
-			ins.a = reg("a", PTXOperand::f32, 1);
-	
-			ir::PTXInstruction::FloatingPointMode floatModes[] = {
-				ir::PTXInstruction::Finite,
-				ir::PTXInstruction::Infinite,
-				ir::PTXInstruction::Number,
-				ir::PTXInstruction::NotANumber,
-				ir::PTXInstruction::Normal,
-				ir::PTXInstruction::SubNormal,
-				ir::PTXInstruction::FloatingPointMode_Invalid
-			};
-			
-			PTXF32 floatValues[] = {
-				-1, 0, 1, FLT_EPSILON, -FLT_EPSILON, 0
-			};
-			
-			for (int mode = 0; floatModes[mode] != ir::PTXInstruction::FloatingPointMode_Invalid; mode++) {
-				ins.opcode = PTXInstruction::TestP;
-				ins.floatingPointMode = floatModes[mode];
-				ins.d = reg("p", PTXOperand::pred, 0);
-				ins.a = reg("a", PTXOperand::f32, 1);
-				
-				
-				
+		for (int typeIndex = 0; typeIndex < 2; ++typeIndex) {
+			ins.type = typeIndex == 0 ? PTXOperand::f32 : PTXOperand::f64;
+			ins.a = reg("a", ins.type, 1);
+			if (ins.type == PTXOperand::f32) {
+				cta->setRegAsF32(0, 1, 0.0f);
+				cta->setRegAsF32(1, 1, -0.0f);
+				cta->setRegAsF32(2, 1, std::numeric_limits<PTXF32>::denorm_min());
+				cta->setRegAsF32(3, 1, 1.0f);
+			} else {
+				cta->setRegAsF64(0, 1, 0.0);
+				cta->setRegAsF64(1, 1, -0.0);
+				cta->setRegAsF64(2, 1, std::numeric_limits<PTXF64>::denorm_min());
+				cta->setRegAsF64(3, 1, 1.0);
 			}
-			
+			for (int mode = 0; mode < 2; ++mode) {
+				const bool normal = mode == 0;
+				ins.floatingPointMode = normal
+					? PTXInstruction::Normal : PTXInstruction::SubNormal;
+				cta->eval_TestP(cta->getActiveContext(), ins);
+				if (cta->getRegAsPredicate(0, 0)
+					|| cta->getRegAsPredicate(1, 0)
+					|| cta->getRegAsPredicate(2, 0) != !normal
+					|| cta->getRegAsPredicate(3, 0) != normal) {
+					status << "testp normal/subnormal classification failed\n";
+					return false;
+				}
+			}
 		}
-		
-		// f64
-		//
-		if (result) {
-			// testp.op.type p, a
-			//
-			//	op: .finite, .infinite, .number, .notanumber, .normal, .subnormal
-			//	type: .f32, .f64
-			//
-			ins.type = PTXOperand::f32;
-			ins.d = reg("p", PTXOperand::pred, 0);
-			ins.a = reg("a", PTXOperand::f32, 1);
-	
-			
-		}
-		*/
-		return result;
+		return true;
 	}
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
@@ -6499,6 +6471,7 @@ public:
 			result = (result && test_Sqrt());
 			result = (result && test_Rsqrt());
 			result = (result && test_Rcp());
+			result = (result && test_TestP());
 			if (prolix && result) {
 				status << "pass: floating-point instructions\n";
 			}
