@@ -6316,6 +6316,40 @@ public:
 
 		cta->reset();
 
+		// .ftz is controlled by the f32 comparison type, not the result type.
+		ins.type = PTXOperand::u64;
+		ins.modifier = PTXInstruction::ftz;
+		ins.d = reg("d", PTXOperand::u64, 0);
+		ins.a = reg("a", PTXOperand::u64, 1);
+		ins.b = reg("b", PTXOperand::u64, 2);
+		ins.c = reg("c", PTXOperand::f32, 3);
+		if (!ins.valid().empty()) {
+			status << "slct.ftz.u64.f32 should be valid\n";
+			result = false;
+		}
+		PTXInstruction invalid = ins;
+		invalid.type = PTXOperand::f32;
+		invalid.d = reg("d", PTXOperand::f32, 0);
+		invalid.a = reg("a", PTXOperand::f32, 1);
+		invalid.b = reg("b", PTXOperand::f32, 2);
+		invalid.c = reg("c", PTXOperand::s32, 3);
+		if (invalid.valid().empty()) {
+			status << "slct.ftz.f32.s32 should be invalid\n";
+			result = false;
+		}
+
+		if (result) {
+			cta->setRegAsU64(0, 1, 11);
+			cta->setRegAsU64(0, 2, 22);
+			cta->setRegAsF32(0, 3,
+				-std::numeric_limits<PTXF32>::denorm_min());
+			cta->eval_SlCt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU64(0, 0) != 11) {
+				status << "slct.ftz.u64.f32 did not select a\n";
+				result = false;
+			}
+		}
+
 		if (result) {
 			// slct.f32.f32 r, a, b, c
 			//

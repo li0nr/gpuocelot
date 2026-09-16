@@ -2041,9 +2041,9 @@ std::string ir::PTXInstruction::valid() const {
 				return "operand C must be either s32 or f32 assignable";
 			}
 			if( modifier & ftz ) {
-				if( PTXOperand::isInt( type ) ) {
+				if( c.type != PTXOperand::f32 ) {
 					return toString( ftz ) 
-						+ " only valid for float point instructions.";
+						+ " only valid for an f32 comparison.";
 				}
 			}
 			break;
