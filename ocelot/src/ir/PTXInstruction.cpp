@@ -1239,7 +1239,9 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid address space " + toString(addressSpace);
 			}
 			if (!(d.addressMode == PTXOperand::Register
-				&& a.addressMode == PTXOperand::Register)) {
+				&& d.type == PTXOperand::pred && d.vec == PTXOperand::v1
+				&& a.addressMode == PTXOperand::Register && a.vec == PTXOperand::v1
+				&& (a.type == PTXOperand::u32 || a.type == PTXOperand::u64))) {
 				return "invalid address mode for operands";
 			}
 			break;

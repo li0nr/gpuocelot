@@ -6921,6 +6921,83 @@ public:
 		return true;
 	}
 
+	bool test_Isspacep() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Isspacep;
+		ins.addressSpace = PTXInstruction::Shared;
+		ins.d = reg("p", PTXOperand::pred, 0);
+		ins.a = reg("a", PTXOperand::u64, 1);
+		if (!ins.valid().empty()) return false;
+		ins.d.type = PTXOperand::u32;
+		if (ins.valid().empty()) return false;
+		ins.d.type = PTXOperand::pred;
+		for (PTXOperand::DataType type : {PTXOperand::s32, PTXOperand::f32,
+			PTXOperand::u16, PTXOperand::b64}) {
+			ins.a.type = type;
+			if (ins.valid().empty()) return false;
+		}
+		ins.a.type = PTXOperand::u64;
+		ins.a.vec = PTXOperand::v2;
+		if (ins.valid().empty()) return false;
+		ins.a.vec = PTXOperand::v1;
+
+		cta->reset();
+		cta->functionCallStack.pushFrame(0, kernel->registerCount(), 16, 64,
+			0, 0, 0);
+		PTXU64 shared64, local64;
+		hydrazine::bit_cast(shared64, cta->functionCallStack.sharedMemoryPointer());
+		hydrazine::bit_cast(local64, cta->functionCallStack.localMemoryPointer(0));
+		ins.a.type = PTXOperand::u64;
+		ins.addressSpace = PTXInstruction::Shared;
+		cta->setRegAsU64(0, 1, shared64);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		cta->setRegAsU64(0, 1, local64);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Local;
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Global;
+		cta->setRegAsU64(0, 1, shared64);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (cta->getRegAsPredicate(0, 0)) return false;
+		cta->setRegAsU64(0, 1, 0x123456789ULL);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		PTXU32 shared32;
+		hydrazine::bit_cast(shared32, cta->functionCallStack.sharedMemoryPointer());
+		ins.a.type = PTXOperand::u32;
+		ins.addressSpace = PTXInstruction::Shared;
+		cta->setRegAsU32(0, 1, shared32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		PTXU32 local32;
+		hydrazine::bit_cast(local32, cta->functionCallStack.localMemoryPointer(0));
+		ins.addressSpace = PTXInstruction::Local;
+		cta->setRegAsU32(0, 1, local32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Global;
+		cta->setRegAsU32(0, 1, local32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (cta->getRegAsPredicate(0, 0)) return false;
+		cta->setRegAsPredicate(0, 0, true);
+		cta->setRegAsPredicate(0, 2, false);
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 2;
+		ins.addressSpace = PTXInstruction::Shared;
+		cta->setRegAsU32(0, 1, local32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		cta->setRegAsPredicate(0, 0, false);
+		cta->setRegAsU32(0, 1, shared32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		bool predicatedOff = !cta->getRegAsPredicate(0, 0);
+		cta->functionCallStack.popFrame();
+		return predicatedOff;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 
 	bool test_Pred_Add() {
@@ -7043,6 +7120,7 @@ public:
 			// cvt instruction
 			result = (result && test_Cvt());
 			result = (result && test_Cvta());
+			result = (result && test_Isspacep());
 	
 			// arithmetic instructions
 			result = (result && test_Abs());

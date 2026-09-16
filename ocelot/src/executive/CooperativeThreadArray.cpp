@@ -4918,7 +4918,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 	switch (instr.addressSpace) {
 	case ir::PTXInstruction::Local:
 	{
-		if (sizeof(void *) == 4) {
+		if (instr.a.type == ir::PTXOperand::u32) {
 			for (int tid = 0; tid < threadCount; tid++) {
 				if (!context.predicated(tid, instr)) {
 					continue;
@@ -4958,7 +4958,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 		break;
 	case ir::PTXInstruction::Shared:
 	{
-		if (sizeof(void *) == 4) {
+		if (instr.a.type == ir::PTXOperand::u32) {
 			for (int tid = 0; tid < threadCount; tid++) {
 				if (!context.predicated(tid, instr)) {
 					continue;
@@ -4981,7 +4981,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				if (!context.predicated(tid, instr)) {
 					continue;
 				}
-				ir::PTXU64 ptr = operandAsU32(tid, instr.a);
+				ir::PTXU64 ptr = operandAsU64(tid, instr.a);
 				ir::PTXU64 sharedMemPtr;
 				ir::PTXU64 sharedMemSize = functionCallStack.sharedMemorySize();
 				hydrazine::bit_cast(sharedMemPtr,
@@ -4998,7 +4998,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 		break;
 	case ir::PTXInstruction::Global:
 	{
-		if (sizeof(void *) == 4) {
+		if (instr.a.type == ir::PTXOperand::u32) {
 			for (int tid = 0; tid < threadCount; tid++) {
 				if (!context.predicated(tid, instr)) {
 					continue;
