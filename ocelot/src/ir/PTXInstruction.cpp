@@ -677,12 +677,12 @@ std::string ir::PTXInstruction::valid() const {
                     + " cannot be assigned to " + PTXOperand::toString( type );
             }
             if( !PTXOperand::valid( PTXOperand::u32, b.type )
-                && a.addressMode != PTXOperand::Immediate ) {
+                && b.addressMode != PTXOperand::Immediate ) {
                 return "operand 1 type " + PTXOperand::toString( b.type )
                     + " cannot be assigned to " + PTXOperand::toString( PTXOperand::u32 );
             }
             if( !PTXOperand::valid( PTXOperand::u32, c.type )
-                && a.addressMode != PTXOperand::Immediate ) {
+                && c.addressMode != PTXOperand::Immediate ) {
                 return "operand 1 type " + PTXOperand::toString( c.type )
                     + " cannot be assigned to " + PTXOperand::toString( PTXOperand::u32 );
             }

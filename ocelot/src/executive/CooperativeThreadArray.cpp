@@ -2596,19 +2596,11 @@ void executive::CooperativeThreadArray::eval_Bfe(CTAContext &context,
 			|| instr.type == ir::PTXOperand::s32);
 		bool isSigned = (instr.type == ir::PTXOperand::s32
 			|| instr.type == ir::PTXOperand::s64);
-
-		ir::PTXU32 pos    = operandAsU32(tid, instr.b);
-		ir::PTXU32 len    = operandAsU32(tid, instr.c);
-		ir::PTXU64 a      = operandAsU64(tid, instr.a);
-		ir::PTXU64 mask   = ((1 << len) - 1);
-		ir::PTXU32 msb	  = min((pos+len-1), size32bit ? 31 : 63);
-		ir::PTXU32 sign   = ((a>>(msb))&1);
-		ir::PTXU64 result = 0;
-
-		if (isSigned) {
-			result = (sign ? -1 : 0) & (~mask);
-		}
-		result |= ((a >> pos) & mask);
+		ir::PTXU64 result = size32bit
+			? hydrazine::bfe<ir::PTXU32>(operandAsU32(tid, instr.a),
+				operandAsU32(tid, instr.b), operandAsU32(tid, instr.c), isSigned)
+			: hydrazine::bfe<ir::PTXU64>(operandAsU64(tid, instr.a),
+				operandAsU32(tid, instr.b), operandAsU32(tid, instr.c), isSigned);
 		if (size32bit) {
 			setRegAsU32(tid, instr.d.reg,
 				hydrazine::bit_cast<ir::PTXU32, ir::PTXU64>(result));

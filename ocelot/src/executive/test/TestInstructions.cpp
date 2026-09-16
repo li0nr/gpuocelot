@@ -4229,6 +4229,83 @@ public:
 		return true;
 	}
 
+	bool test_Bfe() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Bfe;
+		ins.b = imm_uint("pos", PTXOperand::u32, 0);
+		ins.c = imm_uint("len", PTXOperand::u32, 0);
+		ins.d = reg("d", PTXOperand::u32, 0);
+		ins.a = reg("a", PTXOperand::u32, 1);
+		ins.type = PTXOperand::u32;
+		if (!ins.valid().empty()) return false;
+		PTXInstruction invalid = ins;
+		invalid.a.addressMode = PTXOperand::Immediate;
+		invalid.b = reg("pos", PTXOperand::f32, 2);
+		if (invalid.valid().empty()) return false;
+
+		auto check32 = [&](PTXOperand::DataType type, PTXU32 value,
+			PTXU32 pos, PTXU32 len, PTXU32 expected) {
+			ins.type = type;
+			ins.d.type = type;
+			ins.a.type = type;
+			ins.b.imm_uint = pos;
+			ins.c.imm_uint = len;
+			cta->reset();
+			for (int t = 0; t < threadCount; ++t) cta->setRegAsU32(t, 1, value);
+			cta->eval_Bfe(cta->getActiveContext(), ins);
+			for (int t = 0; t < threadCount; ++t)
+				if (cta->getRegAsU32(t, 0) != expected) return false;
+			return true;
+		};
+		if (!check32(PTXOperand::u32, 0xD2, 1, 4, 0x9)) return false;
+		if (!check32(PTXOperand::u32, 0x12345678, 0, 32, 0x12345678)) return false;
+		if (!check32(PTXOperand::u32, 0xffffffff, 0, 0, 0)) return false;
+		if (!check32(PTXOperand::u32, 0xD2, 0x101, 0x104, 0x9)) return false;
+		if (!check32(PTXOperand::s32, 0x000000f0, 4, 4, 0xffffffffu)) return false;
+		if (!check32(PTXOperand::s32, 0x80000000, 30, 4, 0xfffffffeu)) return false;
+		if (!check32(PTXOperand::s32, 0x80000000, 40, 3, 0xffffffffu)) return false;
+
+		ins.type = PTXOperand::u64;
+		ins.d.type = PTXOperand::u64;
+		ins.a.type = PTXOperand::u64;
+		ins.b.imm_uint = 4;
+		ins.c.imm_uint = 8;
+		cta->reset();
+		for (int t = 0; t < threadCount; ++t) cta->setRegAsU64(t, 1, 0x123456789abcdef0ULL);
+		cta->eval_Bfe(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0xef) return false;
+		ins.b.imm_uint = 0;
+		ins.c.imm_uint = 64;
+		cta->eval_Bfe(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0x123456789abcdef0ULL) return false;
+		ins.type = PTXOperand::s64;
+		ins.d.type = PTXOperand::s64;
+		ins.a.type = PTXOperand::s64;
+		ins.b.imm_uint = 62;
+		ins.c.imm_uint = 4;
+		cta->reset();
+		for (int t = 0; t < threadCount; ++t) cta->setRegAsU64(t, 1, 0x8000000000000000ULL);
+		cta->eval_Bfe(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0xfffffffffffffffeULL) return false;
+
+		ins.type = PTXOperand::u32;
+		ins.d.type = PTXOperand::u32;
+		ins.a.type = PTXOperand::u32;
+		ins.b.imm_uint = 0;
+		ins.c.imm_uint = 4;
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 3;
+		cta->reset();
+		for (int t = 0; t < threadCount; ++t) {
+			cta->setRegAsU32(t, 1, 0xf0);
+			cta->setRegAsU32(t, 0, 0xdeadbeef);
+			cta->setRegAsPredicate(t, 3, false);
+		}
+		cta->eval_Bfe(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 0) != 0xdeadbeef) return false;
+		return true;
+	}
+
 	bool test_Lop3() {
 		std::stringstream ptx;
 		ptx << ".version 8.2\n"
@@ -7170,6 +7247,7 @@ public:
 			// logical and shift instructions
 			result = (result && test_Fns());
 			result = (result && test_Szext());
+			result = (result && test_Bfe());
 			result = (result && test_Bmsk());
 			result = (result && test_Lop3());
 			result = (result && test_And());
