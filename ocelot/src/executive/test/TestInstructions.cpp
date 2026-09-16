@@ -3172,8 +3172,7 @@ public:
 		bool result = true;
 
 		PTXInstruction ins;
-		ins.opcode = PTXInstruction::Fma;
-		ins.modifier = PTXInstruction::rn;
+		ins.opcode = PTXInstruction::CopySign;
 
 		// f32
 		//
@@ -3190,24 +3189,18 @@ public:
 				cta->setRegAsF32(i, 1, (PTXF32)((float)(bs * i) / (float)threadCount * 2.7f));
 				cta->setRegAsF32(i, 2, 0);
 			}
-			cta->eval_Fma(cta->getActiveContext(), ins);
+			cta->eval_CopySign(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
 				PTXF32 got = cta->getRegAsF32(i, 2);
 				
 				PTXF32 a = cta->getRegAsF32(i, 0);
 				PTXF32 b = cta->getRegAsF32(i, 1);
 				
-				PTXF32 exp = b;
-				if (a < 0) {
-					exp = -std::fabs(b);
-				}
-				else {
-					exp = std::fabs(b);
-				}
+				PTXF32 exp = std::copysign(b, a);
 					
-				if (std::fabs(got - exp) > 0.1f) {
+				if (got != exp) {
 					result = false;
-					status << "fma.f32 incorrect [" << i << "] - expected: " 
+					status << "copysign.f32 incorrect [" << i << "] - expected: "
 						<< (PTXF32)exp
 						<< ", got " << got << "\n";
 					break;
@@ -3229,24 +3222,18 @@ public:
 				cta->setRegAsF64(i, 1, (PTXF64)((double)(bs * i) / (double)threadCount * 7.7));
 				cta->setRegAsF64(i, 2, 0);
 			}
-			cta->eval_Fma(cta->getActiveContext(), ins);
+			cta->eval_CopySign(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
 				PTXF64 got = cta->getRegAsF64(i, 2);
 				
 				PTXF64 a = cta->getRegAsF64(i, 0);
 				PTXF64 b = cta->getRegAsF64(i, 1);
 				
-				PTXF64 exp = b;
-				if (a < 0) {
-					exp = -std::fabs(b);
-				}
-				else {
-					exp = std::fabs(b);
-				}
+				PTXF64 exp = std::copysign(b, a);
 					
-				if (std::fabs(got - exp) > 0.1) {
+				if (got != exp) {
 					result = false;
-					status << "fma.f64 incorrect [" << i << "] - expected: " 
+					status << "copysign.f64 incorrect [" << i << "] - expected: "
 						<< exp
 						<< ", got " << got << "\n";
 					break;
@@ -6491,6 +6478,7 @@ public:
 			result = (result && test_Cos());
 			result = (result && test_Sin());
 			result = (result && test_Tanh());
+			result = (result && test_CopySign());
 			result = (result && test_Ex2());
 			result = (result && test_Fma());
 			result = (result && test_F16Fma());
