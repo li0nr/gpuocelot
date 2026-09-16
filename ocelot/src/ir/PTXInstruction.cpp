@@ -939,7 +939,8 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " + PTXOperand::toString(type);
 			}
 			if (!(addressSpace == Global || addressSpace == Local
-				|| addressSpace == Shared || addressSpace == Const)) {
+				|| addressSpace == Shared || addressSpace == Const
+				|| addressSpace == Param)) {
 				return "invalid address space " + toString(addressSpace);
 			}
 			break;

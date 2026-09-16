@@ -4347,6 +4347,11 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 				case ir::PTXInstruction::Global: // DO NOTHING
 				case ir::PTXInstruction::Local:  // DO NOTHING
 					break;
+				case ir::PTXInstruction::Param:
+					addrSpaceBase = (ir::PTXU32)(kernel->scheduler
+						? kernel->scheduler->argumentMemory()
+						: (ir::PTXU64)kernel->ArgumentMemory);
+					break;
 				case ir::PTXInstruction::Shared:
 				{
 					hydrazine::bit_cast(addrSpaceBase,
@@ -4398,6 +4403,11 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 					break;
 				case ir::PTXInstruction::Global: // DO NOTHING
 				case ir::PTXInstruction::Local:  // DO NOTHING
+					break;
+				case ir::PTXInstruction::Param:
+					addrSpaceBase = kernel->scheduler
+						? kernel->scheduler->argumentMemory()
+						: (ir::PTXU64)kernel->ArgumentMemory;
 					break;
 				case ir::PTXInstruction::Shared:
 				{
@@ -4472,6 +4482,12 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 				{
 
 				}
+					break;
+				case ir::PTXInstruction::Param:
+					addrSpaceBase = (ir::PTXU32)(kernel->scheduler
+						? kernel->scheduler->argumentMemory()
+						: (ir::PTXU64)kernel->ArgumentMemory);
+					addrSpaceSize = kernel->argumentMemorySize();
 					break;
 				case ir::PTXInstruction::Const:
 				{
@@ -4549,6 +4565,12 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 				{
 
 				}
+					break;
+				case ir::PTXInstruction::Param:
+					addrSpaceBase = kernel->scheduler
+						? kernel->scheduler->argumentMemory()
+						: (ir::PTXU64)kernel->ArgumentMemory;
+					addrSpaceSize = kernel->argumentMemorySize();
 					break;
 				case ir::PTXInstruction::Const:
 				{

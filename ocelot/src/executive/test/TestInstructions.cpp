@@ -5729,6 +5729,34 @@ public:
 		return result;
 	}
 
+	bool test_Cvta() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Cvta;
+		ins.addressSpace = PTXInstruction::Param;
+		ins.type = PTXOperand::u64;
+		ins.d = reg("d", PTXOperand::u64, 1);
+		ins.a = reg("a", PTXOperand::u64, 0);
+		if (!ins.valid().empty()) return false;
+
+		cta->reset();
+		const PTXU64 expected = (PTXU64)kernel->ArgumentMemory + 1;
+		for (int thread = 0; thread < threadCount; ++thread) {
+			cta->setRegAsU64(thread, 0, 1);
+		}
+		cta->eval_Cvta(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU64(thread, 1) != expected) return false;
+			cta->setRegAsU64(thread, 0, expected);
+		}
+
+		ins.toAddrSpace = true;
+		cta->eval_Cvta(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < threadCount; ++thread) {
+			if (cta->getRegAsU64(thread, 1) != 1) return false;
+		}
+		return true;
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 	//
 	// set, setp, selp, slct
@@ -6431,6 +6459,7 @@ public:
 
 			// cvt instruction
 			result = (result && test_Cvt());
+			result = (result && test_Cvta());
 	
 			// arithmetic instructions
 			result = (result && test_Abs());
