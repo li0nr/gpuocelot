@@ -3903,7 +3903,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 			{
 				ir::PTXF32 a = sourceType == ir::PTXOperand::f16
 					? f16ToF32(operandAsU16(threadID, instr.a))
-					: operandAsF32(threadID, instr.a);
+					: ftz(instr.modifier, operandAsF32(threadID, instr.a));
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
@@ -4288,7 +4288,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::f32:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							a = toF32(a, instr.modifier);
+							a = ftz(instr.modifier, toF32(a, instr.modifier));
 							if(instr.modifier & ir::PTXInstruction::sat) {
 								if (a != a) a = 0.0;
 								a = min(1.0, a);

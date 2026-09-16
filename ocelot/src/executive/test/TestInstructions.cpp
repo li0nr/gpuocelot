@@ -5555,8 +5555,68 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Cvt;
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::s32, 1);
+		if (!ins.valid().empty()) {
+			status << "valid cvt.rn.ftz.f32.s32 rejected\n";
+			return false;
+		}
+		ins.type = PTXOperand::f64;
+		ins.d = reg("d", PTXOperand::f64, 0);
+		if (ins.valid().empty()) {
+			status << "invalid cvt.rn.ftz.f64.s32 accepted\n";
+			return false;
+		}
+		ins.modifier = 0;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("d", PTXOperand::b32, 0);
+		ins.a = reg("a", PTXOperand::s32, 1);
+		if (ins.valid().empty()) {
+			status << "invalid cvt.b32.s32 accepted\n";
+			return false;
+		}
+		ins.type = PTXOperand::s32;
+		ins.d = reg("d", PTXOperand::s32, 0);
+		ins.a = reg("a", PTXOperand::b32, 1);
+		if (ins.valid().empty()) {
+			status << "invalid cvt.s32.b32 accepted\n";
+			return false;
+		}
+		ins.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::ftz;
+		ins.d = reg("d", PTXOperand::f64, 0);
+		ins.a = reg("a", PTXOperand::b32, 1);
+		ins.a.relaxedType = PTXOperand::f32;
+		if (!ins.valid().empty()) {
+			status << "valid cvt.ftz.f64.f32 with b32 source rejected\n";
+			return false;
+		}
 
 		cta->reset();
+		ins.type = PTXOperand::f64;
+		ins.modifier = PTXInstruction::ftz;
+		ins.d = reg("d", PTXOperand::f64, 0);
+		ins.a = reg("a", PTXOperand::f32, 1);
+		cta->setRegAsU32(0, 1, 0x80000001);
+		cta->eval_Cvt(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0x8000000000000000ull) {
+			status << "cvt.ftz.f64.f32 did not flush its f32 input\n";
+			return false;
+		}
+
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::f64, 1);
+		cta->setRegAsF64(0, 1,
+			-static_cast<PTXF64>(std::numeric_limits<PTXF32>::denorm_min()));
+		cta->eval_Cvt(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 0) != 0x80000000) {
+			status << "cvt.rn.ftz.f32.f64 did not flush its f32 result\n";
+			return false;
+		}
 
 		// cvt.rn.bf16.f32
 		ins.type = PTXOperand::bf16;

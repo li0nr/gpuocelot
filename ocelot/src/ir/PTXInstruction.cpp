@@ -911,18 +911,24 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Cvt: {
-			if( type == PTXOperand::pred ) {
+			PTXOperand::DataType sourceType = a.relaxedType ==
+				PTXOperand::TypeSpecifier_invalid ? a.type : a.relaxedType;
+			if( !PTXOperand::isInt(type) && !PTXOperand::isFloat(type)
+				&& type != PTXOperand::tf32 ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
-			}					
+			}
+			if( !PTXOperand::isInt(sourceType)
+				&& !PTXOperand::isFloat(sourceType) ) {
+				return "invalid source type " + PTXOperand::toString(sourceType);
+			}
 			if( d.bytes() < PTXOperand::bytes( type ) ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
 					+ " cannot be assigned from " + PTXOperand::toString( type );
 			}
 			if( modifier & ftz ) {
-				if( !(PTXOperand::isFloat( type ) || PTXOperand::isFloat(a.type))) {
-					return toString( ftz ) 
-						+ " only valid for float point instructions.";
+				if( type != PTXOperand::f32 && sourceType != PTXOperand::f32 ) {
+					return ".ftz requires an f32 source or destination";
 				}
 			}
 			if( vec == PTXOperand::v1
