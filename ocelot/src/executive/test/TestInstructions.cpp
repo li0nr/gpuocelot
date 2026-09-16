@@ -4306,6 +4306,112 @@ public:
 		return true;
 	}
 
+	bool test_Bfi() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Bfi;
+		ins.type = PTXOperand::b32;
+		ins.d = reg("d", PTXOperand::b32, 0);
+		ins.pq = imm_uint("pq", PTXOperand::b32, 0xf);
+		ins.a = imm_uint("a", PTXOperand::b32, 0xa5);
+		ins.b = imm_uint("pos", PTXOperand::u32, 0x104);
+		ins.c = imm_uint("len", PTXOperand::u32, 4);
+		if (!ins.valid().empty()) return false;
+
+		auto check32 = [&](PTXU32 pq, PTXU32 a, PTXU32 pos,
+			PTXU32 len, PTXU32 expected) {
+			ins.pq.imm_uint = pq;
+			ins.a.imm_uint = a;
+			ins.b.imm_uint = pos;
+			ins.c.imm_uint = len;
+			cta->reset();
+			cta->eval_Bfi(cta->getActiveContext(), ins);
+			for (int t = 0; t < threadCount; ++t)
+				if (cta->getRegAsU32(t, 0) != expected) return false;
+			return true;
+		};
+		if (!check32(0xf, 0xa5, 0x104, 4, 0xf5)) return false;
+		if (!check32(0xf, 0x12345678, 4, 0x104, 0x123456f8)) return false;
+		if (!check32(0xf, 0x12345678, 4, 0x100, 0x12345678)) return false;
+		if (!check32(0xffffffff, 0, 30, 4, 0xc0000000)) return false;
+		if (!check32(0xffffffff, 0x12345678, 32, 4, 0x12345678)) return false;
+
+		PTXInstruction invalid = ins;
+		invalid.c = reg("len", PTXOperand::u64, 1);
+		if (invalid.valid().empty()) return false;
+		invalid.c = reg("len", PTXOperand::f32, 1);
+		if (invalid.valid().empty()) return false;
+
+		ins.type = PTXOperand::b64;
+		ins.d.type = PTXOperand::b64;
+		ins.pq = imm_uint("pq", PTXOperand::b64, 0xf);
+		ins.a = imm_uint("a", PTXOperand::b64, 0x123456789abcde00ULL);
+		ins.b.imm_uint = 0x104;
+		ins.c.imm_uint = 4;
+		cta->reset();
+		cta->eval_Bfi(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0x123456789abcdef0ULL) return false;
+
+		ins.type = PTXOperand::b32;
+		ins.d.type = PTXOperand::b32;
+		ins.pq = imm_uint("pq", PTXOperand::b32, 0xf);
+		ins.a = imm_uint("a", PTXOperand::b32, 0xa5);
+		ins.b = imm_uint("pos", PTXOperand::u32, 0);
+		ins.c = imm_uint("len", PTXOperand::u32, 4);
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 3;
+		cta->reset();
+		for (int t = 0; t < threadCount; ++t) {
+			cta->setRegAsU32(t, 0, 0xdeadbeef);
+			cta->setRegAsPredicate(t, 3, false);
+		}
+		cta->eval_Bfi(cta->getActiveContext(), ins);
+		return cta->getRegAsU32(0, 0) == 0xdeadbeef;
+	}
+
+	bool test_Bfind() {
+		struct Case { PTXOperand::DataType type; PTXU64 value;
+			bool shift; PTXU32 expected; };
+		const Case cases[] = {
+			{ PTXOperand::u32, 0, false, 0xffffffffu },
+			{ PTXOperand::u32, 1, true, 31 },
+			{ PTXOperand::u32, 0xffffffffu, false, 31 },
+			{ PTXOperand::s32, 0xffffffffu, false, 0xffffffffu },
+			{ PTXOperand::s32, 0xfffffffeu, true, 31 },
+			{ PTXOperand::s32, 0x80000000u, false, 30 },
+			{ PTXOperand::u64, 0, false, 0xffffffffu },
+			{ PTXOperand::u64, 1, true, 63 },
+			{ PTXOperand::u64, 0xffffffffffffffffULL, false, 63 },
+			{ PTXOperand::s64, 0xffffffffffffffffULL, false, 0xffffffffu },
+			{ PTXOperand::s64, 0xfffffffffffffffeULL, true, 63 },
+			{ PTXOperand::s64, 0x8000000000000000ULL, false, 62 }
+		};
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Bfind;
+		ins.d = reg("d", PTXOperand::u32, 0);
+		ins.a = reg("a", PTXOperand::u32, 1);
+		for (const Case& test : cases) {
+			ins.type = test.type;
+			ins.a.type = test.type;
+			ins.shiftAmount = test.shift;
+			cta->reset();
+			if (test.type == PTXOperand::u32 || test.type == PTXOperand::s32)
+				cta->setRegAsU32(0, 1, static_cast<PTXU32>(test.value));
+			else cta->setRegAsU64(0, 1, test.value);
+			cta->eval_Bfind(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != test.expected) return false;
+		}
+		ins.type = PTXOperand::s32;
+		ins.a.type = PTXOperand::s32;
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 3;
+		cta->reset();
+		cta->setRegAsU32(0, 0, 0xdeadbeefu);
+		cta->setRegAsU32(0, 1, 0xffffffffu);
+		cta->setRegAsPredicate(0, 3, false);
+		cta->eval_Bfind(cta->getActiveContext(), ins);
+		return cta->getRegAsU32(0, 0) == 0xdeadbeefu;
+	}
+
 	bool test_Lop3() {
 		std::stringstream ptx;
 		ptx << ".version 8.2\n"
@@ -7248,6 +7354,8 @@ public:
 			result = (result && test_Fns());
 			result = (result && test_Szext());
 			result = (result && test_Bfe());
+			result = (result && test_Bfi());
+			result = (result && test_Bfind());
 			result = (result && test_Bmsk());
 			result = (result && test_Lop3());
 			result = (result && test_And());

@@ -712,7 +712,7 @@ std::string ir::PTXInstruction::valid() const {
 					+ " cannot be assigned to " 
 					+ PTXOperand::toString( PTXOperand::u32 );
 			}
-			if( !PTXOperand::valid( PTXOperand::u32, b.type )  ) {
+			if( !PTXOperand::valid( PTXOperand::u32, c.type )  ) {
 				return "operand 4 type " + PTXOperand::toString( c.type ) 
 					+ " cannot be assigned to " 
 					+ PTXOperand::toString( PTXOperand::u32 );

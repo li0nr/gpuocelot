@@ -2456,7 +2456,7 @@ void executive::CooperativeThreadArray::eval_Bfi(CTAContext &context, const
 			ir::PTXB32 a = operandAsB32(threadID, instr.a);
 			ir::PTXU32 b = operandAsU32(threadID, instr.b);
 			ir::PTXU32 c = operandAsU32(threadID, instr.c);
-			ir::PTXB32 d = hydrazine::bitFieldInsert(pq, a, b, c);
+			ir::PTXB32 d = hydrazine::bitFieldInsert(pq, a, b & 0xff, c & 0xff);
 			setRegAsB32(threadID, instr.d.reg, d);
 		}
 		break;
@@ -2468,7 +2468,7 @@ void executive::CooperativeThreadArray::eval_Bfi(CTAContext &context, const
 			ir::PTXB64 a = operandAsB64(threadID, instr.a);
 			ir::PTXU32 b = operandAsU32(threadID, instr.b);
 			ir::PTXU32 c = operandAsU32(threadID, instr.c);
-			ir::PTXB64 d = hydrazine::bitFieldInsert(pq, a, b, c);
+			ir::PTXB64 d = hydrazine::bitFieldInsert(pq, a, b & 0xff, c & 0xff);
 			setRegAsB64(threadID, instr.d.reg, d);
 		}
 		break;
@@ -2500,7 +2500,10 @@ void executive::CooperativeThreadArray::eval_Bfind(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXS32 a = operandAsS32(threadID, instr.a);
+			const ir::PTXS32 signedA = operandAsS32(threadID, instr.a);
+			const ir::PTXU32 a = signedA < 0
+				? ~static_cast<ir::PTXU32>(signedA)
+				: static_cast<ir::PTXU32>(signedA);
 			ir::PTXU32 d = hydrazine::bfind(a, instr.shiftAmount);
 			setRegAsU32(threadID, instr.d.reg, d);
 		}
@@ -2510,7 +2513,10 @@ void executive::CooperativeThreadArray::eval_Bfind(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXS64 a = operandAsS64(threadID, instr.a);
+			const ir::PTXS64 signedA = operandAsS64(threadID, instr.a);
+			const ir::PTXU64 a = signedA < 0
+				? ~static_cast<ir::PTXU64>(signedA)
+				: static_cast<ir::PTXU64>(signedA);
 			ir::PTXU32 d = hydrazine::bfind(a, instr.shiftAmount);
 			setRegAsU32(threadID, instr.d.reg, d);
 		}
