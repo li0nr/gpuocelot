@@ -5909,6 +5909,45 @@ public:
 
 		cta->reset();
 
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_setp_sink() {\n"
+			<< "  .reg .pred p;\n  .reg .s32 a, b;\n"
+			<< "  setp.eq.s32 _|p, a, b;\n"
+			<< "  setp.ne.s32 p|_, a, b;\n  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse setp sink forms: " << error.what() << "\n";
+			return false;
+		}
+
+		PTXOperand sink;
+		sink.identifier = "_";
+		sink.type = PTXOperand::b64;
+		sink.addressMode = PTXOperand::BitBucket;
+		sink.reg = 0;
+		ins.type = PTXOperand::s32;
+		ins.a = reg("a", PTXOperand::s32, 1);
+		ins.b = reg("b", PTXOperand::s32, 2);
+		ins.comparisonOperator = PTXInstruction::Eq;
+		cta->setRegAsS32(0, 1, 1);
+		cta->setRegAsS32(0, 2, 2);
+		cta->setRegAsPredicate(0, 0, true);
+
+		ins.d = sink;
+		ins.pq = reg("q", PTXOperand::pred, 3);
+		cta->eval_SetP(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)
+			|| !cta->getRegAsPredicate(0, 3)) return false;
+
+		ins.d = reg("p", PTXOperand::pred, 3);
+		ins.pq = sink;
+		cta->setRegAsS32(0, 2, 1);
+		cta->eval_SetP(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)
+			|| !cta->getRegAsPredicate(0, 3)) return false;
+
 		if (result) {
 			// setp.s32.lt p|q, a, b; // p = (a < b); q = !(a < b);
 			//

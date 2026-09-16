@@ -1848,12 +1848,18 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case SetP: {
-			if( d.type != PTXOperand::pred ) {
+			if( d.type != PTXOperand::pred
+				&& d.addressMode != PTXOperand::BitBucket ) {
 				return "destination must be a predicate";
 			}
 			if( pq.type != PTXOperand::pred 
-				&& pq.addressMode != PTXOperand::Invalid ) {
+				&& pq.addressMode != PTXOperand::Invalid
+				&& pq.addressMode != PTXOperand::BitBucket ) {
 				return "Pq must be a predicate";
+			}
+			if( d.addressMode == PTXOperand::BitBucket
+				&& pq.addressMode == PTXOperand::BitBucket ) {
+				return "only one setp destination may be a sink";
 			}
 			if( c.type != PTXOperand::pred 
 				&& c.addressMode != PTXOperand::Invalid ) {

@@ -7696,8 +7696,10 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 					<< " condition = " << t << ", input = " << c << " "
 					<< instr.d.identifier << " = " << p << ", q = " << q );
 
-				setRegAsPredicate(threadID, instr.d.reg, p);
-				if (instr.pq.addressMode != ir::PTXOperand::Invalid) {
+				if (instr.d.addressMode != ir::PTXOperand::BitBucket)
+					setRegAsPredicate(threadID, instr.d.reg, p);
+				if (instr.pq.addressMode != ir::PTXOperand::Invalid
+					&& instr.pq.addressMode != ir::PTXOperand::BitBucket) {
 					setRegAsPredicate(threadID, instr.pq.reg, q);
 				}
 			}
@@ -7799,8 +7801,10 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 					<< " condition = " << t << ", input = " << c << " "
 					<< instr.d.identifier << " = " << p << ", q = " << q );
 
-				setRegAsPredicate(threadID, instr.d.reg, p);
-				if (instr.pq.addressMode != ir::PTXOperand::Invalid) {
+				if (instr.d.addressMode != ir::PTXOperand::BitBucket)
+					setRegAsPredicate(threadID, instr.d.reg, p);
+				if (instr.pq.addressMode != ir::PTXOperand::Invalid
+					&& instr.pq.addressMode != ir::PTXOperand::BitBucket) {
 					setRegAsPredicate(threadID, instr.pq.reg, q);
 				}
 			}
@@ -7923,8 +7927,10 @@ void executive::CooperativeThreadArray::eval_SetP(CTAContext &context,
 					<< " condition = " << t << ", input = " << c << " "
 					<< instr.d.identifier << " = " << p << ", q = " << q );
 
-				setRegAsPredicate(threadID, instr.d.reg, p);
-				if (instr.pq.addressMode != ir::PTXOperand::Invalid) {
+				if (instr.d.addressMode != ir::PTXOperand::BitBucket)
+					setRegAsPredicate(threadID, instr.d.reg, p);
+				if (instr.pq.addressMode != ir::PTXOperand::Invalid
+					&& instr.pq.addressMode != ir::PTXOperand::BitBucket) {
 					setRegAsPredicate(threadID, instr.pq.reg, q);
 				}
 			}

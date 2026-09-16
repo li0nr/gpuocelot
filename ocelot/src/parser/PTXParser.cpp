@@ -1911,7 +1911,10 @@ namespace parser
 
 		if( operandVector.size() > index )
 		{
-			if( ( operandVector[ index ].operand.type == ir::PTXOperand::pred
+			if( ( ( operandVector[ index ].operand.type == ir::PTXOperand::pred
+				|| ( statement.instruction.opcode == ir::PTXInstruction::SetP
+					&& operandVector[index].operand.addressMode
+						== ir::PTXOperand::BitBucket ) )
 				&& operandVector.size() > 4 ) || operandVector.size() == 6 )
 			{
 				statement.instruction.pq = operandVector[index++].operand;
