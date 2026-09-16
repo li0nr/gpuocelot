@@ -29,6 +29,17 @@ using namespace executive;
 
 namespace test {
 
+class ConstMemoryTestKernel : public EmulatedKernel {
+public:
+	ConstMemoryTestKernel(ir::IRKernel* kernel)
+		: EmulatedKernel(kernel, 0, false) {}
+	void setConstMemory(unsigned int size) {
+		delete[] ConstMemory;
+		ConstMemory = new char[size];
+		_constMemorySize = size;
+	}
+};
+
 class TestInstructions: public Test {
 public:
 	int threadCount;
@@ -7181,6 +7192,82 @@ public:
 		return predicatedOff;
 	}
 
+	bool test_IsspacepConst() {
+		ConstMemoryTestKernel constKernel(
+			module.getKernel("_Z17k_simple_sequencePi"));
+		constKernel.initialize();
+		constKernel.setKernelShape(1, 1, 1);
+		constKernel.setConstMemory(16);
+		CooperativeThreadArray constCta(&constKernel, ir::Dim3(), false);
+		constCta.functionCallStack.pushFrame(0, constKernel.registerCount(),
+			16, 64, 0, 0, 0);
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Isspacep;
+		ins.addressSpace = PTXInstruction::Const;
+		ins.d = reg("p", PTXOperand::pred, 0);
+		ins.a = reg("a", PTXOperand::u64, 1);
+		if (!ins.valid().empty()) return false;
+		PTXU64 base;
+		hydrazine::bit_cast(base, constKernel.ConstMemory);
+		constCta.setRegAsU64(0, 1, base + 15);
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		if (!constCta.getRegAsPredicate(0, 0)) return false;
+		constCta.setRegAsU64(0, 1, base + 16);
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		if (constCta.getRegAsPredicate(0, 0)) return false;
+		constCta.setRegAsU64(0, 1, base - 1);
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		if (constCta.getRegAsPredicate(0, 0)) return false;
+		constCta.setRegAsPredicate(0, 2, false);
+		constCta.setRegAsPredicate(0, 0, true);
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 2;
+		constCta.setRegAsU64(0, 1, base + 16);
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		if (!constCta.getRegAsPredicate(0, 0)) return false;
+		constCta.setRegAsPredicate(0, 2, true);
+		constCta.setRegAsU32(0, 1, static_cast<PTXU32>(base));
+		ins.a.type = PTXOperand::u32;
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		return constCta.getRegAsPredicate(0, 0);
+	}
+
+	bool test_IsspacepParam() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Isspacep;
+		ins.addressSpace = PTXInstruction::Param;
+		ins.d = reg("p", PTXOperand::pred, 0);
+		ins.a = reg("a", PTXOperand::u64, 1);
+		if (!ins.valid().empty() || kernel->argumentMemorySize() == 0)
+			return false;
+		PTXU64 base = reinterpret_cast<PTXU64>(kernel->ArgumentMemory);
+		PTXU64 size = kernel->argumentMemorySize();
+		cta->reset();
+		for (PTXU64 address : {base, base + size - 1, base - 1, base + size}) {
+			cta->setRegAsU64(0, 1, address);
+			cta->eval_Isspacep(cta->getActiveContext(), ins);
+			if (cta->getRegAsPredicate(0, 0) !=
+				(address >= base && address - base < size)) return false;
+		}
+		ins.addressSpace = PTXInstruction::Global;
+		cta->setRegAsU64(0, 1, base);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Param;
+		ins.a.type = PTXOperand::u32;
+		const PTXU32 base32 = static_cast<PTXU32>(base);
+		cta->setRegAsU32(0, 1, base32 + static_cast<PTXU32>(size - 1));
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		cta->setRegAsPredicate(0, 0, true);
+		cta->setRegAsPredicate(0, 2, false);
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 2;
+		cta->setRegAsU32(0, 1, base32 + static_cast<PTXU32>(size));
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		return cta->getRegAsPredicate(0, 0);
+	}
+
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 
 	bool test_Pred_Add() {
@@ -7304,6 +7391,8 @@ public:
 			result = (result && test_Cvt());
 			result = (result && test_Cvta());
 			result = (result && test_Isspacep());
+			result = (result && test_IsspacepConst());
+			result = (result && test_IsspacepParam());
 	
 			// arithmetic instructions
 			result = (result && test_Abs());

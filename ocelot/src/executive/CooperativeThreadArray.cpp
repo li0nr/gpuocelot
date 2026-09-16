@@ -4914,6 +4914,64 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 
 	trace();
 	switch (instr.addressSpace) {
+	case ir::PTXInstruction::Const:
+	{
+		if (instr.a.type == ir::PTXOperand::u32) {
+			for (int tid = 0; tid < threadCount; tid++) {
+				if (!context.predicated(tid, instr)) continue;
+				ir::PTXU32 ptr = operandAsU32(tid, instr.a);
+				ir::PTXU32 base;
+				hydrazine::bit_cast(base, kernel->ConstMemory);
+				const ir::PTXU32 size = kernel->constMemorySize();
+				setRegAsPredicate(tid, instr.d.reg,
+					ptr >= base && ptr - base < size);
+			}
+		}
+		else {
+			for (int tid = 0; tid < threadCount; tid++) {
+				if (!context.predicated(tid, instr)) continue;
+				ir::PTXU64 ptr = operandAsU64(tid, instr.a);
+				ir::PTXU64 base;
+				hydrazine::bit_cast(base, kernel->ConstMemory);
+				const ir::PTXU64 size = kernel->constMemorySize();
+				setRegAsPredicate(tid, instr.d.reg,
+					ptr >= base && ptr - base < size);
+			}
+		}
+	}
+		break;
+	case ir::PTXInstruction::Param:
+	{
+		if (instr.a.type == ir::PTXOperand::u32) {
+			const ir::PTXU32 base = static_cast<ir::PTXU32>(kernel->scheduler
+				? kernel->scheduler->argumentMemory()
+				: reinterpret_cast<ir::PTXU64>(kernel->ArgumentMemory));
+			const ir::PTXU32 size = static_cast<ir::PTXU32>(kernel->scheduler
+				? kernel->scheduler->argumentMemorySize()
+				: kernel->argumentMemorySize());
+			for (int tid = 0; tid < threadCount; ++tid) {
+				if (!context.predicated(tid, instr)) continue;
+				const ir::PTXU32 ptr = operandAsU32(tid, instr.a);
+				setRegAsPredicate(tid, instr.d.reg,
+					ptr >= base && ptr - base < size);
+			}
+		}
+		else {
+			const ir::PTXU64 base = kernel->scheduler
+				? kernel->scheduler->argumentMemory()
+				: reinterpret_cast<ir::PTXU64>(kernel->ArgumentMemory);
+			const ir::PTXU64 size = kernel->scheduler
+				? kernel->scheduler->argumentMemorySize()
+				: kernel->argumentMemorySize();
+			for (int tid = 0; tid < threadCount; ++tid) {
+				if (!context.predicated(tid, instr)) continue;
+				const ir::PTXU64 ptr = operandAsU64(tid, instr.a);
+				setRegAsPredicate(tid, instr.d.reg,
+					ptr >= base && ptr - base < size);
+			}
+		}
+	}
+		break;
 	case ir::PTXInstruction::Local:
 	{
 		if (instr.a.type == ir::PTXOperand::u32) {
