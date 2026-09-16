@@ -5552,6 +5552,92 @@ public:
 
 	bool test_Cvt() {
 		bool result = true;
+		std::stringstream cvtPtx;
+		cvtPtx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_cvt() {\n"
+			<< "  .reg .f16x2 d; .reg .f32 a, b;\n"
+			<< "  cvt.rn.f16x2.f32 d, a, b; ret; }\n";
+		Module parsed;
+		try { parsed.load(cvtPtx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse .reg .f16x2 CVT: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::stringstream packedImmediatePtx;
+		packedImmediatePtx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry packed_immediate() {\n"
+			<< "  .reg .b32 d, td; .reg .b16 bd;\n"
+			<< "  cvt.rn.f16x2.f32 d, 0f3f800000, 0f40000000;\n"
+			<< "  cvt.rn.bf16x2.f32 d, 0f3f800000, 0f40000000;\n"
+			<< "  cvt.rn.bf16.f32 bd, 0f3f800000;\n"
+			<< "  cvt.rna.tf32.f32 td, 0f3f800000; ret; }\n";
+		try {
+			Module immediate;
+			immediate.load(packedImmediatePtx);
+			Module roundTrip;
+			std::stringstream serialized(immediate.toString());
+			roundTrip.load(serialized);
+			unsigned int foundA = 0;
+			unsigned int foundB = 0;
+			for (Module::StatementVector::const_iterator i =
+				roundTrip.statements().begin(); i != roundTrip.statements().end(); ++i) {
+				if (i->directive == PTXStatement::Instr
+					&& i->instruction.opcode == PTXInstruction::Cvt) {
+					if (i->instruction.a.type == PTXOperand::f32) ++foundA;
+					if (i->instruction.b.type == PTXOperand::f32) ++foundB;
+				}
+			}
+			if (foundA != 4 || foundB != 2) {
+				status << "packed cvt immediate lost its f32 source type\n";
+				return false;
+			}
+		}
+		catch (const std::exception& error) {
+			status << "packed cvt immediate parse/round-trip failed: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::stringstream invalidBf16Register;
+		invalidBf16Register << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry invalid_bf16() {\n"
+			<< "  .reg .f32 d; .reg .b32 a;\n"
+			<< "  cvt.f32.bf16 d, a; ret; }\n";
+		try {
+			Module invalid;
+			invalid.load(invalidBf16Register);
+			status << "cvt.f32.bf16 accepted a b32 register\n";
+			return false;
+		}
+		catch (const std::exception&) {
+		}
+		std::stringstream validBf16Register;
+		validBf16Register << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry valid_bf16() {\n"
+			<< "  .reg .f32 d; .reg .b16 a;\n"
+			<< "  cvt.f32.bf16 d, a; ret; }\n";
+		try {
+			Module valid;
+			valid.load(validBf16Register);
+		}
+		catch (const std::exception& error) {
+			status << "cvt.f32.bf16 rejected a b16 register: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::stringstream invalidScalarCvtPtx;
+		invalidScalarCvtPtx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry invalid_cvt() {\n"
+			<< "  .reg .u32 d, a, b;\n"
+			<< "  cvt.u32.u32 d, a, b; ret; }\n";
+		try {
+			Module invalid;
+			invalid.load(invalidScalarCvtPtx);
+			status << "scalar CVT with an extra operand was accepted\n";
+			return false;
+		}
+		catch (const std::exception&) {
+		}
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Cvt;
@@ -5593,6 +5679,52 @@ public:
 			status << "valid cvt.ftz.f64.f32 with b32 source rejected\n";
 			return false;
 		}
+		ins.modifier = 0;
+		ins.type = PTXOperand::f32;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::s32, 1);
+		if (ins.valid().empty()) {
+			status << "cvt.f32.s32 accepted without rounding\n";
+			return false;
+		}
+		ins.type = PTXOperand::s32;
+		ins.d = reg("d", PTXOperand::s32, 0);
+		ins.a = reg("a", PTXOperand::f32, 1);
+		if (ins.valid().empty()) {
+			status << "cvt.s32.f32 accepted without rounding\n";
+			return false;
+		}
+		ins.type = PTXOperand::f32;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::f64, 1);
+		if (ins.valid().empty()) {
+			status << "cvt.f32.f64 accepted without rounding\n";
+			return false;
+		}
+		ins.type = PTXOperand::s64;
+		ins.modifier = PTXInstruction::rn;
+		ins.d = reg("d", PTXOperand::s64, 0);
+		ins.a = reg("a", PTXOperand::s32, 1);
+		if (ins.valid().empty()) {
+			status << "cvt.rn.s64.s32 accepted\n";
+			return false;
+		}
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rni;
+		ins.d = reg("d", PTXOperand::f32, 0);
+		ins.a = reg("a", PTXOperand::f32, 1);
+		if (!ins.valid().empty()) {
+			status << "valid cvt.rni.f32.f32 rejected\n";
+			return false;
+		}
+		ins.type = PTXOperand::s64;
+		ins.modifier = PTXInstruction::sat;
+		ins.d = reg("d", PTXOperand::s64, 0);
+		ins.a = reg("a", PTXOperand::s32, 1);
+		if (ins.valid().empty()) {
+			status << "cvt.sat.s64.s32 accepted although saturation is impossible\n";
+			return false;
+		}
 
 		cta->reset();
 		ins.type = PTXOperand::f64;
@@ -5615,6 +5747,19 @@ public:
 		cta->eval_Cvt(cta->getActiveContext(), ins);
 		if (cta->getRegAsU32(0, 0) != 0x80000000) {
 			status << "cvt.rn.ftz.f32.f64 did not flush its f32 result\n";
+			return false;
+		}
+
+		// f64-to-f32 CVT clears stale upper bits in a wider destination.
+		ins.type = PTXOperand::f32;
+		ins.modifier = PTXInstruction::rn;
+		ins.d = reg("d", PTXOperand::b64, 0);
+		ins.a = reg("a", PTXOperand::f64, 1);
+		cta->setRegAsU64(0, 0, ~0ull);
+		cta->setRegAsF64(0, 1, 1.0);
+		cta->eval_Cvt(cta->getActiveContext(), ins);
+		if (cta->getRegAsU64(0, 0) != 0x000000003f800000ull) {
+			status << "cvt.rn.f32.f64 did not zero-extend its result\n";
 			return false;
 		}
 
@@ -5668,12 +5813,11 @@ public:
 
 		if (result) {
 			ins.modifier = PTXInstruction::rz;
-			try {
-				cta->eval_Cvt(cta->getActiveContext(), ins);
-				status << "cvt.rz.bf16.f32 should not be implemented\n";
+			cta->setRegAsU32(0, 1, 0x3f808001);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 0) != 0x3f80) {
+				status << "cvt.rz.bf16.f32 failed\n";
 				result = false;
-			} catch (RuntimeException &) {
-				// Expected: only .rn is implemented.
 			}
 		}
 
@@ -5726,6 +5870,72 @@ public:
 		}
 
 		if (result) {
+			// Same-size floating conversions honor integer rounding modifiers.
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::f16, 1);
+			cta->setRegAsU16(0, 1, 0x3f00); // 1.75
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 0) != 0x3c00) {
+				status << "cvt.rzi.f16.f16 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.modifier = PTXInstruction::rni;
+			cta->setRegAsU16(0, 1, 0x4100); // 2.5, ties to even 2
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 0) != 0x4000) {
+				status << "cvt.rni.f16.f16 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::f64;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::f64, 0);
+			ins.a = reg("a", PTXOperand::f64, 1);
+			cta->setRegAsF64(0, 1, 1.75);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsF64(0, 0) != 1.0) {
+				status << "cvt.rzi.f64.f64 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.modifier = PTXInstruction::rni;
+			cta->setRegAsF64(0, 1, 2.5);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsF64(0, 0) != 2.0) {
+				status << "cvt.rni.f64.f64 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// .rni is nearest-even regardless of the host mode, then restores it.
+			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rni;
+			ins.d = reg("d", PTXOperand::f32, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+			const int previous = hydrazine::fegetround();
+			hydrazine::fesetround(FE_UPWARD);
+			cta->setRegAsF32(0, 1, 2.5f);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			const bool rounded = cta->getRegAsU32(0, 0) == 0x40000000u;
+			const bool restored = hydrazine::fegetround() == FE_UPWARD;
+			hydrazine::fesetround(previous);
+			if (!rounded || !restored) {
+				status << "cvt.rni did not force nearest-even or restore host mode\n";
+				result = false;
+			}
+		}
+
+		if (result) {
 			// cvt.rzi.s32.f16
 			ins.type = PTXOperand::s32;
 			ins.modifier = PTXInstruction::rzi;
@@ -5770,6 +5980,232 @@ public:
 			if (cta->getRegAsU16(0, 0) != 0x3c00) {
 				status << "cvt.rn.f16.f64 failed\n";
 				result = false;
+			}
+		}
+
+		if (result) {
+			// Integer saturation clamps both ends of the destination range.
+			ins.type = PTXOperand::u8;
+			ins.modifier = PTXInstruction::sat;
+			ins.d = reg("d", PTXOperand::u8, 0);
+			ins.a = reg("a", PTXOperand::s32, 1);
+			cta->setRegAsS32(0, 1, 300);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU8(0, 0) != 255) {
+				status << "cvt.sat.u8.s32 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Floating saturation clamps to [0, 1].
+			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rn | PTXInstruction::sat;
+			ins.d = reg("d", PTXOperand::f32, 0);
+			ins.a = reg("a", PTXOperand::s32, 1);
+			cta->setRegAsS32(0, 1, -2);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != 0) {
+				status << "cvt.rn.sat.f32.s32 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Unsigned and floating results zero-extend in wider registers.
+			ins.type = PTXOperand::u32;
+			ins.modifier = 0;
+			ins.d = reg("d", PTXOperand::u64, 0);
+			ins.a = reg("a", PTXOperand::s32, 1);
+			cta->setRegAsS32(0, 1, -1);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU64(0, 0) != 0x00000000ffffffffull) {
+				status << "cvt.u32.s32 did not zero-extend its result\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Exact exclusive upper bounds must not reach an integer cast.
+			ins.type = PTXOperand::s32;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::s32, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+			cta->setRegAsF32(0, 1, std::ldexp(1.0f, 31));
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsS32(0, 0) != INT_MAX) {
+				status << "cvt.rzi.s32.f32 upper boundary failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::u32;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::u32, 0);
+			ins.a = reg("a", PTXOperand::f64, 1);
+			cta->setRegAsF64(0, 1, std::ldexp(1.0, 32));
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != UINT_MAX) {
+				status << "cvt.rzi.u32.f64 upper boundary failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::s64;
+			ins.modifier = PTXInstruction::rzi;
+			ins.d = reg("d", PTXOperand::s64, 0);
+			ins.a = reg("a", PTXOperand::f64, 1);
+			cta->setRegAsF64(0, 1, std::ldexp(1.0, 63));
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsS64(0, 0) != LLONG_MAX) {
+				status << "cvt.rzi.s64.f64 upper boundary failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::f32;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("d", PTXOperand::b64, 0);
+			ins.a = reg("a", PTXOperand::s32, 1);
+			if (!ins.valid().empty()) {
+				status << "cvt.rn.f32.s32 rejected a wider destination register\n";
+				result = false;
+			} else {
+				cta->setRegAsU64(0, 0, ~0ull);
+				cta->setRegAsS32(0, 1, 1);
+				cta->eval_Cvt(cta->getActiveContext(), ins);
+				if (cta->getRegAsU64(0, 0) != 0x000000003f800000ull) {
+					status << "cvt.rn.f32.s32 did not zero-extend its result\n";
+					result = false;
+				}
+			}
+		}
+
+		if (result) {
+			// ReLU and packed conversions supported by sm_86.
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = PTXInstruction::rn | PTXInstruction::relu;
+			ins.d = reg("d", PTXOperand::b32, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+			ins.b = reg("b", PTXOperand::f32, 2);
+			cta->setRegAsF32(0, 1, 1.0f);
+			cta->setRegAsF32(0, 2, -2.0f);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != 0x3c000000) {
+				status << "cvt.rn.relu.f16x2.f32 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::bf16x2;
+			ins.modifier = PTXInstruction::rn;
+			cta->setRegAsF32(0, 1, 1.0f);
+			cta->setRegAsF32(0, 2, 2.0f);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != 0x3f804000) {
+				status << "cvt.rn.bf16x2.f32 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			ins.type = PTXOperand::tf32;
+			ins.modifier = PTXInstruction::rna;
+			ins.b = PTXOperand();
+			cta->setRegAsU32(0, 1, 0x3f801000);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != 0x3f802000) {
+				status << "cvt.rna.tf32.f32 failed\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// CVT sources are read before writing an aliased destination.
+			ins.type = PTXOperand::u32;
+			ins.modifier = 0;
+			ins.d = reg("r0", PTXOperand::b64, 0);
+			ins.a = reg("r0", PTXOperand::s32, 0);
+			cta->setRegAsS32(0, 0, -1);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU64(0, 0) != 0xffffffffull) {
+				status << "aliased scalar cvt lost its source\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Both packed sources may alias the packed destination register.
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("r0", PTXOperand::b32, 0);
+			ins.a = reg("r0", PTXOperand::f32, 0);
+			ins.b = reg("r0", PTXOperand::f32, 0);
+			cta->setRegAsF32(0, 0, 1.0f);
+			cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != 0x3c003c00u) {
+				status << "aliased packed cvt lost its sources\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// ReLU maps NaN to the canonical FP16 NaN encoding.
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn | PTXInstruction::relu;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+			ins.b = PTXOperand();
+			if (!ins.valid().empty()) {
+				status << "valid scalar ReLU CVT rejected before evaluation\n";
+				result = false;
+			}
+			cta->setRegAsU32(0, 1, 0xffc12345u);
+			if (result) cta->eval_Cvt(cta->getActiveContext(), ins);
+			if (result && cta->getRegAsU16(0, 0) != 0x7fffu) {
+				status << "cvt.rn.relu.f16.f32 did not canonicalize NaN\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Packed f16x2 accepts relaxed b32 sources and wider destinations.
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = PTXInstruction::rn;
+			ins.d = reg("d", PTXOperand::b64, 0);
+			ins.a = reg("a", PTXOperand::b32, 1);
+			ins.a.relaxedType = PTXOperand::f32;
+			ins.b = reg("b", PTXOperand::b32, 2);
+			ins.b.relaxedType = PTXOperand::f32;
+			if (!ins.valid().empty()) {
+				status << "packed cvt rejected relaxed sources or destination\n";
+				result = false;
+			}
+		}
+
+		if (result) {
+			// Scalar CVT rejects invalid ReLU modifiers.
+			ins.type = PTXOperand::f16;
+			ins.modifier = PTXInstruction::rn | PTXInstruction::relu
+				| PTXInstruction::sat;
+			ins.d = reg("d", PTXOperand::b16, 0);
+			ins.a = reg("a", PTXOperand::f32, 1);
+			ins.b = PTXOperand();
+			if (ins.valid().empty()) {
+				status << "cvt.rn.sat.relu.f16.f32 accepted\n";
+				result = false;
+			}
+			if (result) {
+				ins.modifier = PTXInstruction::rn | PTXInstruction::relu
+					| PTXInstruction::ftz;
+				if (ins.valid().empty()) {
+					status << "cvt.relu.ftz.f16.f32 accepted\n";
+					result = false;
+				}
 			}
 		}
 	

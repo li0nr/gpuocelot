@@ -201,6 +201,9 @@ std::string ir::PTXInstruction::modifierString( unsigned int modifier,
 	else if( modifier & rn ) {
 		result += "rn.";
 	}
+	else if( modifier & rna ) {
+		result += "rna.";
+	}
 	else if( modifier & rz ) {
 		result += "rz.";
 	}
@@ -226,6 +229,9 @@ std::string ir::PTXInstruction::modifierString( unsigned int modifier,
 	if( modifier & sat ) {
 		result += "sat.";
 	}
+	if( modifier & relu ) {
+		result += "relu.";
+	}
 	if( carry == CC ) {
 		result += "cc.";
 	}
@@ -239,6 +245,7 @@ std::string ir::PTXInstruction::toString( Modifier modifier ) {
 		case wide:   return "wide";   break;
 		case sat:    return "sat";    break;
 		case rn:     return "rn";     break;
+		case rna:    return "rna";    break;
 		case rz:     return "rz";     break;
 		case rm:     return "rm";     break;
 		case rp:     return "rp";     break;
@@ -247,6 +254,7 @@ std::string ir::PTXInstruction::toString( Modifier modifier ) {
 		case nan:    return "NaN";    break;
 		case xorsign:return "xorsign";break;
 		case abs:    return "abs";    break;
+		case relu:   return "relu";   break;
 		default: break;
 	}
 	return "";	
@@ -913,14 +921,138 @@ std::string ir::PTXInstruction::valid() const {
 		case Cvt: {
 			PTXOperand::DataType sourceType = a.relaxedType ==
 				PTXOperand::TypeSpecifier_invalid ? a.type : a.relaxedType;
+			const int cvtModifiers = rni | rzi | rmi | rpi | rn | rna | rz
+				| rm | rp | ftz | sat | relu;
+			if( modifier & ~cvtModifiers ) return "invalid cvt modifier";
+			const bool packed = type == PTXOperand::f16x2
+				|| type == PTXOperand::bf16x2;
+			if (!packed && b.addressMode != PTXOperand::Invalid) {
+				return "scalar cvt accepts only two operands";
+			}
+			if( packed ) {
+				const PTXOperand::DataType bSourceType = b.relaxedType ==
+					PTXOperand::TypeSpecifier_invalid ? b.type : b.relaxedType;
+				if( sourceType != PTXOperand::f32
+					|| bSourceType != PTXOperand::f32 ) {
+					return "packed cvt requires two f32 source operands";
+				}
+				const int rounding = modifier & (rn | rz);
+				if( rounding != rn && rounding != rz ) {
+					return "packed cvt requires .rn or .rz";
+				}
+				if( modifier & ~(rn | rz | relu) ) {
+					return "invalid packed cvt modifier";
+				}
+				if( type == PTXOperand::f16x2
+					? !PTXOperand::relaxedValid(type, d.type)
+					: d.type != PTXOperand::b32 ) {
+					return "packed cvt requires a b32 destination";
+				}
+				break;
+			}
+			if( type == PTXOperand::tf32 ) {
+				if( sourceType != PTXOperand::f32 || modifier != rna ) {
+					return "sm_86 tf32 cvt requires cvt.rna.tf32.f32";
+				}
+				if( d.type != PTXOperand::b32 ) {
+					return "tf32 cvt requires a b32 destination";
+				}
+				break;
+			}
+			if( type == PTXOperand::bf16 ) {
+				const int rounding = modifier & (rn | rz);
+				if( sourceType != PTXOperand::f32
+					|| (modifier & ~(rn | rz | relu))
+					|| (rounding != rn && rounding != rz) ) {
+					return "sm_86 bf16 cvt requires cvt.{rn,rz}{.relu}.bf16.f32";
+				}
+				if( d.type != PTXOperand::b16 ) {
+					return "bf16 cvt requires a b16 destination";
+				}
+				break;
+			}
+			if( sourceType == PTXOperand::bf16 ) {
+				if( type != PTXOperand::f32 || modifier ) {
+					return "sm_86 supports only cvt.f32.bf16";
+				}
+				if( !PTXOperand::relaxedValid(type, d.type) ) {
+					return "cvt.f32.bf16 requires an f32-compatible destination";
+				}
+				break;
+			}
+			if( sourceType == PTXOperand::f16x2
+				|| sourceType == PTXOperand::bf16x2
+				|| sourceType == PTXOperand::tf32 ) {
+				return "cvt source type is not supported on sm_86";
+			}
 			if( !PTXOperand::isInt(type) && !PTXOperand::isFloat(type)
-				&& type != PTXOperand::tf32 ) {
+				) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
 			if( !PTXOperand::isInt(sourceType)
 				&& !PTXOperand::isFloat(sourceType) ) {
 				return "invalid source type " + PTXOperand::toString(sourceType);
+			}
+			const bool destinationFloat = PTXOperand::isFloat(type);
+			const bool sourceFloat = PTXOperand::isFloat(sourceType);
+			const bool destinationInt = PTXOperand::isInt(type);
+			const bool sourceInt = PTXOperand::isInt(sourceType);
+			const int integerRounding = modifier & (rni | rzi | rmi | rpi);
+			const int floatRounding = modifier & (rn | rz | rm | rp);
+			const int rounding = integerRounding | floatRounding;
+			if( rounding && (rounding & (rounding - 1)) ) {
+				return "cvt accepts only one rounding modifier";
+			}
+			const bool narrowerFloat = sourceFloat && destinationFloat
+				&& PTXOperand::bytes(type) < PTXOperand::bytes(sourceType);
+			const bool sameSizeFloat = sourceFloat && destinationFloat
+				&& PTXOperand::bytes(type) == PTXOperand::bytes(sourceType);
+			if( integerRounding
+				&& !(sourceFloat && (destinationInt || sameSizeFloat)) ) {
+				return "integer rounding is invalid for this cvt conversion";
+			}
+			if( floatRounding
+				&& !(destinationFloat && (sourceInt || narrowerFloat)) ) {
+				return "floating-point rounding is invalid for this cvt conversion";
+			}
+			if( sourceFloat && destinationInt && !integerRounding ) {
+				return "float-to-integer cvt requires integer rounding";
+			}
+			if( sourceInt && destinationFloat && !floatRounding ) {
+				return "integer-to-float cvt requires floating-point rounding";
+			}
+			if( narrowerFloat && !floatRounding ) {
+				return "narrowing float cvt requires floating-point rounding";
+			}
+			if( modifier & rna ) {
+				return ".rna is valid only for cvt.rna.tf32.f32 on sm_86";
+			}
+			if( modifier & relu ) {
+				const int rounding = modifier & (rn | rz);
+				if( type != PTXOperand::f16 || sourceType != PTXOperand::f32
+					|| (rounding != rn && rounding != rz)
+					|| (modifier & ~(rn | rz | relu)) ) {
+					return ".relu requires cvt.{rn,rz}.f16.f32";
+				}
+			}
+			if( modifier & sat ) {
+				if( !destinationInt && type != PTXOperand::f16
+					&& type != PTXOperand::f32 && type != PTXOperand::f64 ) {
+					return ".sat is invalid for this cvt destination type";
+				}
+				if( destinationInt && sourceInt ) {
+					const unsigned int destinationBits = PTXOperand::bytes(type) * 8;
+					const unsigned int sourceBits = PTXOperand::bytes(sourceType) * 8;
+					const bool destinationSigned = PTXOperand::isSigned(type);
+					const bool sourceSigned = PTXOperand::isSigned(sourceType);
+					const bool destinationSuperset = destinationSigned == sourceSigned
+						? destinationBits >= sourceBits
+						: destinationSigned && destinationBits > sourceBits;
+					if( destinationSuperset ) {
+						return ".sat is invalid when the destination range contains the source range";
+					}
+				}
 			}
 			if( d.bytes() < PTXOperand::bytes( type ) ) {
 				return "operand D type " + PTXOperand::toString( d.type ) 
@@ -2519,38 +2651,11 @@ std::string ir::PTXInstruction::toString() const {
 		}
 		case Cvt: {
 			std::string result = guard() + "cvt.";
-			if( PTXOperand::isFloat( d.type )) {
-				if ((d.type == PTXOperand::f32 && a.type == PTXOperand::f64) 
-					|| PTXOperand::isInt(a.type)) {
-					result += modifierString( modifier, carry );
-				}
-			}
-			else {
-				if( modifier & rn ) {
-					result += "rn.";
-				} else if( modifier & rz ) {
-					result += "rz.";
-				} else if( modifier & rm ) {
-					result += "rm.";
-				} else if( modifier & rp ) {
-					result += "rp.";
-				} else if( modifier & rni ) {
-          result += "rni.";
-        } else if( modifier & rzi ) {
-          result += "rzi.";
-        } else if( modifier & rmi ) {
-          result += "rmi.";
-        } else if( modifier & rpi ) {
-          result += "rpi.";
-        }
-
-				if( modifier & ftz ) {
-					result += "ftz.";
-				}
-				if( modifier & sat ) {
-					result += "sat.";
-				}
-			}
+			if( modifier & rni ) result += "rni.";
+			else if( modifier & rzi ) result += "rzi.";
+			else if( modifier & rmi ) result += "rmi.";
+			else if( modifier & rpi ) result += "rpi.";
+			result += modifierString(modifier, carry);
 			
 			PTXOperand::DataType sourceType = a.type;
 	
@@ -2561,6 +2666,11 @@ std::string ir::PTXInstruction::toString() const {
 			result += PTXOperand::toString( type ) + "." 
 				+ PTXOperand::toString( sourceType ) + " " + d.toString() + ", " 
 				+ a.toString();
+			if( type == PTXOperand::f16x2 || type == PTXOperand::bf16x2 ) {
+				result += ", " + b.toString();
+			} else if (b.addressMode != PTXOperand::Invalid) {
+				result += ", " + b.toString();
+			}
 			return result;
 		}
 		case Cvta: {

@@ -31,6 +31,7 @@
 #include <cstring>
 #include <climits>
 #include <algorithm>
+#include <limits>
 #include <sstream>
 
 // Preprocessor Macros
@@ -494,6 +495,20 @@ static ir::PTXF32 tf32FromF32(ir::PTXF32 value) {
 		bits += 0x2000u;
 	}
 	return hydrazine::bit_cast<ir::PTXF32>(bits);
+}
+
+static ir::PTXU32 tf32FromF32Rna(ir::PTXF32 value) {
+	// Model TF32 by retaining the upper 10 f32 fraction bits.
+	const ir::PTXU32 exponentMask = 0x7f800000u;
+	const ir::PTXU32 discardedMask = (1u << 13) - 1;
+	const ir::PTXU32 halfway = 1u << 12;
+	const ir::PTXU32 retainedUnit = 1u << 13;
+	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
+	if ((bits & exponentMask) == exponentMask) return bits;
+	const ir::PTXU32 discarded = bits & discardedMask;
+	bits &= ~discardedMask;
+	if (discarded >= halfway) bits += retainedUnit;
+	return bits;
 }
 
 template< typename Source >
@@ -3150,6 +3165,40 @@ void executive::CooperativeThreadArray::eval_Cos(CTAContext &context,
 	}
 }
 
+template< typename Destination, typename Source >
+static Destination cvtInteger(Source value, int modifier) {
+	if( !(modifier & ir::PTXInstruction::sat) ) {
+		return static_cast<Destination>(value);
+	}
+
+	if( std::numeric_limits<Source>::is_signed ) {
+		const ir::PTXS64 signedValue = static_cast<ir::PTXS64>(value);
+		if( signedValue < 0 ) {
+			if( !std::numeric_limits<Destination>::is_signed ) return 0;
+
+			const ir::PTXS64 minimum = static_cast<ir::PTXS64>(
+				(std::numeric_limits<Destination>::min)());
+			return signedValue < minimum
+				? (std::numeric_limits<Destination>::min)()
+				: static_cast<Destination>(value);
+		}
+	}
+
+	const ir::PTXU64 unsignedValue = static_cast<ir::PTXU64>(value);
+	const ir::PTXU64 maximum = static_cast<ir::PTXU64>(
+		(std::numeric_limits<Destination>::max)());
+	return unsignedValue > maximum
+		? (std::numeric_limits<Destination>::max)()
+		: static_cast<Destination>(value);
+}
+
+template< typename Float >
+static Float cvtSaturate(Float value, int modifier) {
+	if( !(modifier & ir::PTXInstruction::sat) ) return value;
+	if( hydrazine::isnan(value) || value <= 0 ) return 0;
+	return value >= 1 ? 1 : value;
+}
+
 template< typename Int >
 static ir::PTXF32 toF32(Int value, int modifier) {
 	int mode = hydrazine::fegetround();
@@ -3162,7 +3211,7 @@ static ir::PTXF32 toF32(Int value, int modifier) {
 	} else if (modifier & ir::PTXInstruction::rp) {
 		hydrazine::fesetround(FE_UPWARD);
 	}
-	ir::PTXF32 d = value;
+	ir::PTXF32 d = cvtSaturate(static_cast<ir::PTXF32>(value), modifier);
 	hydrazine::fesetround(mode);
 	return d;
 }
@@ -3179,13 +3228,17 @@ static ir::PTXF64 toF64(Int value, int modifier) {
 	} else if (modifier & ir::PTXInstruction::rp) {
 		hydrazine::fesetround(FE_UPWARD);
 	}
-	ir::PTXF64 d = value;
+	ir::PTXF64 d = cvtSaturate(static_cast<ir::PTXF64>(value), modifier);
 	hydrazine::fesetround(mode);
 	return d;
 }
 
 template< typename Source >
 static ir::PTXU16 toF16(Source value, int modifier) {
+	if( (modifier & ir::PTXInstruction::relu) && hydrazine::isnan(value) ) {
+		return 0x7fff;
+	}
+	if( (modifier & ir::PTXInstruction::relu) && value < 0 ) value = 0;
 	int mode = hydrazine::fegetround();
 	if (modifier & ir::PTXInstruction::rn) {
 		hydrazine::fesetround(FE_TONEAREST);
@@ -3197,19 +3250,24 @@ static ir::PTXU16 toF16(Source value, int modifier) {
 		hydrazine::fesetround(FE_UPWARD);
 	}
 	ir::PTXF16 half = value;
+	if( modifier & ir::PTXInstruction::sat ) {
+		half = cvtSaturate(static_cast<ir::PTXF32>(half), modifier);
+	}
 	hydrazine::fesetround(mode);
 	ir::PTXU16 bits;
 	std::memcpy(&bits, &half, sizeof(bits));
 	return bits;
 }
 
-static ir::PTXU16 f32ToBF16Rn(ir::PTXF32 value) {
+static ir::PTXU16 f32ToBF16(ir::PTXF32 value, int modifier) {
+	if( (modifier & ir::PTXInstruction::relu) && value < 0 ) value = 0;
 	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
 	if ((bits & 0x7fffffffU) > 0x7f800000U) {
 		// NVIDIA canonical NaN
 		return 0x7fffU;
 	}
 	ir::PTXU16 upper = static_cast<ir::PTXU16>(bits >> 16);
+	if( modifier & ir::PTXInstruction::rz ) return upper;
 	ir::PTXU16 lower = static_cast<ir::PTXU16>(bits & 0xffffU);
 	if (lower > 0x8000U) {
 		return upper + 1U;
@@ -3219,12 +3277,18 @@ static ir::PTXU16 f32ToBF16Rn(ir::PTXF32 value) {
 	return upper + (upper & 1U);
 }
 
+static ir::PTXU16 f32ToBF16Rn(ir::PTXF32 value) {
+	return f32ToBF16(value, ir::PTXInstruction::rn);
+}
+
 template< typename Float >
-static Float roundToInt(Float a, int modifier, executive::CTAContext &context,
-	const ir::PTXInstruction &instr) {
+static Float roundToInt(Float a, int modifier) {
 	Float fd = 0;
 	if (modifier & ir::PTXInstruction::rni) {
+		const int previous = hydrazine::fegetround();
+		hydrazine::fesetround(FE_TONEAREST);
 		fd = hydrazine::nearbyintf(a);
+		hydrazine::fesetround(previous);
 	} else if (modifier & ir::PTXInstruction::rzi) {
 		fd = hydrazine::trunc(a);
 	} else if (modifier & ir::PTXInstruction::rmi) {
@@ -3238,12 +3302,42 @@ static Float roundToInt(Float a, int modifier, executive::CTAContext &context,
 	return fd;
 }
 
+template< typename Float >
+static Float roundToInt(Float a, int modifier, executive::CTAContext &,
+	const ir::PTXInstruction &) {
+	return roundToInt(a, modifier);
+}
+
+template< typename Destination, typename Float >
+static Destination cvtFloatToInteger(Float value, int modifier) {
+	if (value != value) return 0;
+	const Float rounded = roundToInt(value, modifier);
+	const int bits = sizeof(Destination) * CHAR_BIT;
+	const int magnitudeBits = std::numeric_limits<Destination>::is_signed
+		? bits - 1 : bits;
+	const Float upper = std::ldexp(Float(1), magnitudeBits);
+	if (rounded >= upper) return (std::numeric_limits<Destination>::max)();
+	if (std::numeric_limits<Destination>::is_signed && rounded
+		< -upper) return (std::numeric_limits<Destination>::min)();
+	if (!std::numeric_limits<Destination>::is_signed && rounded < 0) return 0;
+	return static_cast<Destination>(rounded);
+}
+
 /*!
 
 */
 void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
+	auto setCvtB16 = [this](int threadID, ir::PTXOperand::RegisterType reg,
+		ir::PTXU16 value) {
+		setRegAsU64(threadID, reg, value);
+	};
+	auto setCvtF32 = [this](int threadID, ir::PTXOperand::RegisterType reg,
+		ir::PTXF32 value) {
+		setRegAsU64(threadID, reg,
+			hydrazine::bit_cast<ir::PTXU32>(value));
+	};
 	for (int threadID = 0; threadID < threadCount; threadID++) {
 		if (!context.predicated(threadID, instr)) continue;
 
@@ -3251,6 +3345,27 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 
 		if (instr.a.relaxedType != ir::PTXOperand::TypeSpecifier_invalid) {
 			sourceType = instr.a.relaxedType;
+		}
+		if( instr.type == ir::PTXOperand::f16x2 ) {
+			const ir::PTXU32 d =
+				static_cast<ir::PTXU32>(toF16(
+					operandAsF32(threadID, instr.a), instr.modifier)) << 16
+				| toF16(operandAsF32(threadID, instr.b), instr.modifier);
+			setRegAsU64(threadID, instr.d.reg, d);
+			continue;
+		}
+		if( instr.type == ir::PTXOperand::bf16x2 ) {
+			const ir::PTXU32 d =
+				static_cast<ir::PTXU32>(f32ToBF16(
+					operandAsF32(threadID, instr.a), instr.modifier)) << 16
+				| f32ToBF16(operandAsF32(threadID, instr.b), instr.modifier);
+			setRegAsU64(threadID, instr.d.reg, d);
+			continue;
+		}
+		if( instr.type == ir::PTXOperand::tf32 ) {
+			setRegAsU64(threadID, instr.d.reg,
+				tf32FromF32Rna(operandAsF32(threadID, instr.a)));
+			continue;
 		}
 
 		switch (sourceType) {
@@ -3260,7 +3375,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsB8(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3283,17 +3398,14 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXU8 a = operandAsU8(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, CHAR_MAX);
-							}
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsU8(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsB8(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3317,7 +3429,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsS8(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3333,24 +3445,34 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::pred: // fall through
 					case ir::PTXOperand::u8: // fall through
-					case ir::PTXOperand::b8: // fall through
+					case ir::PTXOperand::b8:
+						{
+							setRegAsU64(threadID, instr.d.reg,
+								cvtInteger<ir::PTXU8>(
+									operandAsS8(threadID, instr.a), instr.modifier));
+						}
+						break;
 					case ir::PTXOperand::b16: // fall through
-					case ir::PTXOperand::u16: // fall through
+					case ir::PTXOperand::u16:
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU16>(
+								operandAsS8(threadID, instr.a), instr.modifier));
+						break;
 					case ir::PTXOperand::b32: // fall through
-					case ir::PTXOperand::u32: // fall through
+					case ir::PTXOperand::u32:
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU32>(
+								operandAsS8(threadID, instr.a), instr.modifier));
+						break;
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
-						{
-							ir::PTXS8 a = operandAsS8(threadID, instr.a);
-							if (instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							setRegAsU64(threadID, instr.d.reg, a);
-						}
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU64>(
+								operandAsS8(threadID, instr.a), instr.modifier));
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsS8(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3375,7 +3497,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsB16(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3384,8 +3506,8 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							ir::PTXU16 a = operandAsU16(threadID, instr.a);
-							ir::PTXU8 d = a;
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsU16(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3404,27 +3526,21 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXU16 a = operandAsU16(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, CHAR_MAX);
-							}
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsU16(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXU16 a = operandAsU16(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, SHRT_MAX);
-							}
-							ir::PTXS16 d = a;
+							ir::PTXS16 d = cvtInteger<ir::PTXS16>(
+								operandAsU16(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsB16(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3449,15 +3565,15 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsS16(threadID, instr.a),
 								instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXS16 a = operandAsS16(threadID, instr.a);
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsS16(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3473,31 +3589,32 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::u8: // fall through
 					case ir::PTXOperand::b8:
 						{
-							ir::PTXS16 a = operandAsS16(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU8 d = a;
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsS16(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b16: // fall through
-					case ir::PTXOperand::u16: // fall through
+					case ir::PTXOperand::u16:
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU16>(
+								operandAsS16(threadID, instr.a), instr.modifier));
+						break;
 					case ir::PTXOperand::b32: // fall through
-					case ir::PTXOperand::u32: // fall through
+					case ir::PTXOperand::u32:
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU32>(
+								operandAsS16(threadID, instr.a), instr.modifier));
+						break;
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
-						{
-							ir::PTXS16 a = operandAsS16(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							setRegAsU64(threadID, instr.d.reg, a);
-						}
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU64>(
+								operandAsS16(threadID, instr.a), instr.modifier));
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsS16(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3522,7 +3639,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsU32(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3531,16 +3648,16 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							ir::PTXU32 a = operandAsU32(threadID, instr.a);
-							ir::PTXU8 d = a;
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsU32(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::u16: // fall through
 					case ir::PTXOperand::b16:
 						{
-							ir::PTXU32 a = operandAsU32(threadID, instr.a);
-							ir::PTXU16 d = a;
+							ir::PTXU16 d = cvtInteger<ir::PTXU16>(
+								operandAsU32(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3556,37 +3673,28 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXU32 a = operandAsU32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, CHAR_MAX);
-							}
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsU32(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXU32 a = operandAsU32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, SHRT_MAX);
-							}
-							ir::PTXS16 d = a;
+							ir::PTXS16 d = cvtInteger<ir::PTXS16>(
+								operandAsU32(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s32:
 						{
-							ir::PTXU32 a = operandAsU32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, INT_MAX);
-							}
-							ir::PTXS32 d = a;
+							ir::PTXS32 d = cvtInteger<ir::PTXS32>(
+								operandAsU32(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsU32(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3610,7 +3718,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsS32(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3619,48 +3727,42 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							ir::PTXS32 a = operandAsS32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU8 d = a;
-							setRegAsS64(threadID, instr.d.reg, d);
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsS32(threadID, instr.a), instr.modifier);
+							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::u16: // fall through
 					case ir::PTXOperand::b16:
 						{
-							ir::PTXS32 a = operandAsS32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU16 d = a;
-							setRegAsS64(threadID, instr.d.reg, d);
+							ir::PTXU16 d = cvtInteger<ir::PTXU16>(
+								operandAsS32(threadID, instr.a), instr.modifier);
+							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b32: // fall through
-					case ir::PTXOperand::u32: // fall through
+					case ir::PTXOperand::u32:
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU32>(
+								operandAsS32(threadID, instr.a), instr.modifier));
+						break;
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
-						{
-							ir::PTXS32 a = operandAsS32(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							setRegAsS64(threadID, instr.d.reg, a);
-						}
+						setRegAsU64(threadID, instr.d.reg,
+							cvtInteger<ir::PTXU64>(
+								operandAsS32(threadID, instr.a), instr.modifier));
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXS32 a = operandAsS32(threadID, instr.a);
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsS32(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXS32 a = operandAsS32(threadID, instr.a);
-							ir::PTXS16 d = a;
+							ir::PTXS16 d = cvtInteger<ir::PTXS16>(
+								operandAsS32(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3673,7 +3775,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsS32(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3697,7 +3799,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsS64(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3706,34 +3808,25 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8: // fall through
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU8 d = a;
-							setRegAsS64(threadID, instr.d.reg, d);
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsS64(threadID, instr.a), instr.modifier);
+							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::u16: // fall through
 					case ir::PTXOperand::b16: // fall through
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU16 d = a;
-							setRegAsS64(threadID, instr.d.reg, d);
+							ir::PTXU16 d = cvtInteger<ir::PTXU16>(
+								operandAsS64(threadID, instr.a), instr.modifier);
+							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b32: // fall through
 					case ir::PTXOperand::u32:
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = max(a, 0);
-							}
-							ir::PTXU32 d = a;
-							setRegAsS64(threadID, instr.d.reg, d);
+							ir::PTXU32 d = cvtInteger<ir::PTXU32>(
+								operandAsS64(threadID, instr.a), instr.modifier);
+							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b64: // fall through
@@ -3748,22 +3841,22 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsS64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							ir::PTXS16 d = a;
+							ir::PTXS16 d = cvtInteger<ir::PTXS16>(
+								operandAsS64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s32:
 						{
-							ir::PTXS64 a = operandAsS64(threadID, instr.a);
-							ir::PTXS32 d = a;
+							ir::PTXS32 d = cvtInteger<ir::PTXS32>(
+								operandAsS64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3775,7 +3868,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsS64(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3800,7 +3893,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsU64(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3809,24 +3902,24 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							ir::PTXU8 d = a;
+							ir::PTXU8 d = cvtInteger<ir::PTXU8>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b16: // fall through
 					case ir::PTXOperand::u16:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							ir::PTXU16 d = a;
+							ir::PTXU16 d = cvtInteger<ir::PTXU16>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::b32: // fall through
 					case ir::PTXOperand::u32:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							ir::PTXU32 d = a;
+							ir::PTXU32 d = cvtInteger<ir::PTXU32>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsU64(threadID, instr.d.reg, d);
 						}
 						break;
@@ -3839,47 +3932,35 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 						break;
 					case ir::PTXOperand::s8:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, CHAR_MAX);
-							}
-							ir::PTXS8 d = a;
+							ir::PTXS8 d = cvtInteger<ir::PTXS8>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, SHRT_MAX);
-							}
-							ir::PTXS16 d = a;
+							ir::PTXS16 d = cvtInteger<ir::PTXS16>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s32:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, INT_MAX);
-							}
-							ir::PTXS32 d = a;
+							ir::PTXS32 d = cvtInteger<ir::PTXS32>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::s64:
 						{
-							ir::PTXU64 a = operandAsU64(threadID, instr.a);
-							if(instr.modifier & ir::PTXInstruction::sat) {
-								a = min(a, LLONG_MAX);
-							}
-							ir::PTXS64 d = a;
+							ir::PTXS64 d = cvtInteger<ir::PTXS64>(
+								operandAsU64(threadID, instr.a), instr.modifier);
 							setRegAsS64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								toF32(operandAsU64(threadID, instr.a),
 								instr.modifier));
 						}
@@ -3907,7 +3988,8 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							a = roundToInt(a, instr.modifier);
+							setCvtB16(threadID, instr.d.reg,
 								toF16(a, instr.modifier));
 						}
 						break;
@@ -3915,149 +3997,53 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::b8: // fall through
 					case ir::PTXOperand::u8:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU8 d = 0;
-							if(fd > UCHAR_MAX) {
-								d = UCHAR_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU8>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b16: // fall through
 					case ir::PTXOperand::u16:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU16 d = 0;
-							if(fd > USHRT_MAX) {
-								d = USHRT_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU16>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b32: // fall through
 					case ir::PTXOperand::u32:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU32 d = 0;
-							if(fd > static_cast<float>(UINT_MAX)) {
-								d = UINT_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU32>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU64 d = 0;
-							if(fd > static_cast<float>(ULLONG_MAX)) {
-								d = ULLONG_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU64>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s8:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS8 d = 0;
-							if(fd > CHAR_MAX) {
-								d = CHAR_MAX;
-							}
-							else if(fd < CHAR_MIN) {
-								d = CHAR_MIN;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS8>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS16 d = 0;
-							if(fd > SHRT_MAX) {
-								d = SHRT_MAX;
-							}
-							else if(fd < SHRT_MIN) {
-								d = SHRT_MIN;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS16>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s32:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS32 d = 0;
-							if(fd > static_cast<float>(INT_MAX)) {
-								d = INT_MAX;
-							}
-							else if(fd < INT_MIN) {
-								d = INT_MIN;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS32>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s64:
 						{
-							if (a != a) a = 0.0f;
-							ir::PTXF32 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS64 d = 0;
-							if(fd > static_cast<float>(LLONG_MAX)) {
-								d = LLONG_MAX;
-							}
-							else if(fd < LLONG_MIN) {
-								d = LLONG_MIN;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS64>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::f32:
@@ -4065,25 +4051,21 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 							a = roundToInt(a, instr.modifier, context,
 								instr);
 
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								sat(instr.modifier, a));
 						}
 						break;
 					case ir::PTXOperand::f64:
 						{
-							ir::PTXF64 d = toF64(a, instr.modifier);
+							ir::PTXF64 d = roundToInt(a, instr.modifier);
+							d = toF64(d, instr.modifier);
 							setRegAsF64(threadID, instr.d.reg, d);
 						}
 						break;
 					case ir::PTXOperand::bf16:
 						{
-							if (instr.modifier != ir::PTXInstruction::rn) {
-								throw RuntimeException(
-									"only cvt.rn.bf16.f32 is implemented",
-									context.PC, instr);
-							}
-							ir::PTXU16 d = f32ToBF16Rn(a);
-							setRegAsB16(threadID, instr.d.reg, d);
+							ir::PTXU16 d = f32ToBF16(a, instr.modifier);
+							setCvtB16(threadID, instr.d.reg, d);
 						}
 						break;
 					default:
@@ -4098,14 +4080,14 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(bf16ToF32(operandAsU16(threadID,
 								instr.a)), instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::f32:
 						{
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								bf16ToF32(operandAsU16(threadID, instr.a)));
 						}
 						break;
@@ -4121,7 +4103,7 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 				switch (instr.type) {
 					case ir::PTXOperand::f16:
 						{
-							setRegAsB16(threadID, instr.d.reg,
+							setCvtB16(threadID, instr.d.reg,
 								toF16(operandAsF64(threadID, instr.a),
 								instr.modifier));
 						}
@@ -4131,158 +4113,60 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 					case ir::PTXOperand::u8:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0f;
-							ir::PTXF64 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU8 d = 0;
-							if(fd > UCHAR_MAX) {
-								d = UCHAR_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU8>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b16: // fall through
 					case ir::PTXOperand::u16:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0f;
-							ir::PTXF64 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU16 d = 0;
-							if(fd > USHRT_MAX) {
-								d = USHRT_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else {
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU16>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b32: // fall through
 					case ir::PTXOperand::u32:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0f;
-							ir::PTXF64 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU32 d = 0;
-							if(fd > UINT_MAX) {
-								d = UINT_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else
-							{
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU32>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::b64: // fall through
 					case ir::PTXOperand::u64:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0f;
-							ir::PTXF64 fd = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXU64 d = 0;
-							if(fd > static_cast<double>(ULLONG_MAX)) {
-								d = ULLONG_MAX;
-							}
-							else if(fd < 0) {
-								d = 0;
-							}
-							else
-							{
-								d = fd;
-							}
-							setRegAsU64(threadID, instr.d.reg, d);
+							setRegAsU64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXU64>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s8:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0;
-							a = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS8 d = 0;
-							if(a > CHAR_MAX) {
-								d = CHAR_MAX;
-							}
-							else if(a < CHAR_MIN) {
-								d = CHAR_MIN;
-							}
-							else {
-								d = a;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS8>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s16:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0;
-							a = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS16 d = 0;
-							if(a > SHRT_MAX) {
-								d = SHRT_MAX;
-							}
-							else if(a < SHRT_MIN) {
-								d = SHRT_MIN;
-							}
-							else {
-								d = a;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS16>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s32:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0;
-							a = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS32 d = 0;
-							if(a > INT_MAX) {
-								d = INT_MAX;
-							}
-							else if(a < INT_MIN) {
-								d = INT_MIN;
-							}
-							else {
-								d = a;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS32>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::s64:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
-							if (a != a) a = 0.0;
-							a = roundToInt(a, instr.modifier,
-								context, instr);
-							ir::PTXS64 d = 0;
-							if(a > static_cast<double>(LLONG_MAX)) {
-								d = LLONG_MAX;
-							}
-							else if(a < LLONG_MIN) {
-								d = LLONG_MIN;
-							}
-							else {
-								d = a;
-							}
-							setRegAsS64(threadID, instr.d.reg, d);
+							setRegAsS64(threadID, instr.d.reg,
+								cvtFloatToInteger<ir::PTXS64>(a, instr.modifier));
 						}
 						break;
 					case ir::PTXOperand::f32:
@@ -4294,15 +4178,16 @@ void executive::CooperativeThreadArray::eval_Cvt(CTAContext &context,
 								a = min(1.0, a);
 								a = max(a, 0.0);
 							}
-							setRegAsF32(threadID, instr.d.reg,
+							setCvtF32(threadID, instr.d.reg,
 								sat(instr.modifier, a));
 						}
 						break;
 					case ir::PTXOperand::f64:
 						{
 							ir::PTXF64 a = operandAsF64(threadID, instr.a);
+							a = roundToInt(a, instr.modifier);
 							setRegAsF64(threadID, instr.d.reg,
-							sat(instr.modifier, a));
+								sat(instr.modifier, a));
 						}
 						break;
 					default:

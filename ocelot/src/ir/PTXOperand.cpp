@@ -49,8 +49,10 @@ std::string ir::PTXOperand::toString( DataType type ) {
 		case b32:  return "b32";  break;
 		case b64:  return "b64";  break;
 		case f16:  return "f16";  break;
+		case f16x2:return "f16x2";break;
 		case f32:  return "f32";  break;
 		case bf16: return "bf16"; break;
+		case bf16x2:return "bf16x2";break;
 		case tf32: return "tf32"; break;
 		case f64:  return "f64";  break;
 		case pred: return "pred"; break;
@@ -151,8 +153,11 @@ bool ir::PTXOperand::isFloat( DataType type ) {
 	bool result = false;
 	switch( type ) {
 		case f16: /* fall through */
+		case f16x2: /* fall through */
 		case f32: /* fall through */
 		case bf16:/* fall through */
+		case bf16x2:/* fall through */
+		case tf32:/* fall through */
 		case f64: result = true;
 		default: break;
 	}
@@ -201,6 +206,8 @@ unsigned int ir::PTXOperand::bytes( DataType type ) {
 		case s16:  return 2; break;
 		case u32:  /* fall through */
 		case b32:  /* fall through */
+		case f16x2: /* fall through */
+		case bf16x2: /* fall through */
 		case f32:  /* fall through */
 		case tf32: /* fall through */
 		case s32:  return 4; break;
@@ -351,10 +358,15 @@ bool ir::PTXOperand::valid( DataType destination, DataType source ) {
 			}
 			break;
 		}
+		case f16x2: {
+			return source == b32 || source == f16x2;
+		}
 		case bf16: {
 			return source == b16;
 			break;
 		}
+		case bf16x2: return source == b32;
+		case tf32: return source == b32;
 		case pred: {
 			return source == pred;
 			break;
@@ -549,6 +561,8 @@ bool ir::PTXOperand::relaxedValid( DataType instructionType,
 		}
 		case f32: {
 			switch( operand ) {
+				case b64: /* fall through */
+				case f64: /* fall through */
 				case b32: /* fall through */
 				case f32: return true; break;
 				default: break;
@@ -557,17 +571,32 @@ bool ir::PTXOperand::relaxedValid( DataType instructionType,
 		}
 		case f16: {
 			switch( operand ) {
+				case b64: /* fall through */
+				case f64: /* fall through */
+				case b32: /* fall through */
+				case f32: /* fall through */
 				case b16: /* fall through */
 				case f16: return true; break;
 				default: break;
 			}
 			break;
 		}
+		case f16x2: {
+			return operand == b32 || operand == f16x2
+				|| operand == b64 || operand == f64;
+		}
 		case bf16: {
 			switch( operand ) {
 				case b16: return true; break;
 				default: break;
 			}
+			break;
+		}
+		case bf16x2: {
+			return operand == b32;
+		}
+		case tf32: {
+			return operand == b32;
 		}
 		case pred: {
 			return operand == pred;

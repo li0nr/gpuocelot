@@ -87,18 +87,19 @@
 
 %token<value> TOKEN_U32 TOKEN_S32 TOKEN_S8 TOKEN_S16 TOKEN_S64 TOKEN_U8 
 %token<value> TOKEN_U16 TOKEN_U64 TOKEN_B8 TOKEN_B16 TOKEN_B32 TOKEN_B64 
-%token<value> TOKEN_F16 TOKEN_F64 TOKEN_F32 TOKEN_BF16 TOKEN_TF32 TOKEN_PRED
+%token<value> TOKEN_F16 TOKEN_F16X2 TOKEN_F64 TOKEN_F32 TOKEN_BF16 TOKEN_BF16X2
+%token<value> TOKEN_TF32 TOKEN_PRED
 
 %token<value> TOKEN_EQ TOKEN_NE TOKEN_LT TOKEN_LE TOKEN_GT TOKEN_GE
 %token<value> TOKEN_LS TOKEN_HS TOKEN_EQU TOKEN_NEU TOKEN_LTU TOKEN_LEU
 %token<value> TOKEN_GTU TOKEN_GEU TOKEN_NUM TOKEN_NAN
 
 %token<value> TOKEN_HI TOKEN_LO TOKEN_AND TOKEN_OR TOKEN_XOR
-%token<value> TOKEN_RN TOKEN_RM TOKEN_RZ TOKEN_RP TOKEN_SAT TOKEN_VOLATILE
+%token<value> TOKEN_RN TOKEN_RNA TOKEN_RM TOKEN_RZ TOKEN_RP TOKEN_SAT TOKEN_VOLATILE
 %token<value> TOKEN_TAIL TOKEN_UNI TOKEN_ALIGN TOKEN_BYTE TOKEN_WIDE TOKEN_CARRY
 %token<value> TOKEN_RNI TOKEN_RMI TOKEN_RZI TOKEN_RPI
 %token<value> TOKEN_FTZ TOKEN_APPROX TOKEN_FULL TOKEN_SHIFT_AMOUNT
-%token<value> TOKEN_NAN_MODIFIER TOKEN_XORSIGN TOKEN_ABS_MODIFIER
+%token<value> TOKEN_NAN_MODIFIER TOKEN_XORSIGN TOKEN_ABS_MODIFIER TOKEN_RELU
 %token<value> TOKEN_R TOKEN_G TOKEN_B TOKEN_A TOKEN_L
 
 %token<value> TOKEN_TO
@@ -308,7 +309,7 @@ pointerDataTypeId: TOKEN_U64 | TOKEN_U32;
 dataTypeId : TOKEN_U8 | TOKEN_U16 | TOKEN_U32 | TOKEN_U64 | TOKEN_S8 
 	| TOKEN_S16 | TOKEN_S32 | TOKEN_S64 | TOKEN_B8 | TOKEN_B16 | TOKEN_B32 
 	| TOKEN_B64 | TOKEN_F16 | TOKEN_F32 | TOKEN_F64
-	| TOKEN_BF16 | TOKEN_PRED;
+	| TOKEN_BF16 | TOKEN_F16X2 | TOKEN_PRED;
 
 dataType : dataTypeId
 {
@@ -1176,12 +1177,33 @@ intRoundingModifier : intRounding
 
 cvtRoundingModifier : intRoundingModifier | floatRoundingModifier;
 
-cvtModifier : cvtRoundingModifier optionalFtz sat;
-cvtModifier : cvtRoundingModifier optionalFtz;
-cvtModifier : optionalFtz sat;
-cvtModifier : optionalFtz;
+cvtRoundingModifier : TOKEN_RNA
+{
+	state.modifier( $<value>1 );
+};
 
-cvt : OPCODE_CVT cvtModifier dataType dataType operand ',' operand ';'
+optionalCvtRounding : cvtRoundingModifier | /* empty string */;
+optionalRelu : TOKEN_RELU
+{
+	state.modifier( $<value>1 );
+};
+optionalRelu : /* empty string */;
+
+cvtModifier : optionalCvtRounding optionalFtz optionalSaturate optionalRelu;
+
+cvtDataTypeId : dataTypeId | TOKEN_BF16X2 | TOKEN_TF32;
+cvtDataType : cvtDataTypeId
+{
+	state.dataType( $<value>1 );
+};
+
+cvt : OPCODE_CVT cvtModifier cvtDataType cvtDataType operand ',' operand ';'
+{
+	state.instruction( $<text>1, $<value>3 );
+	state.relaxedConvert( $<value>4, @1 );
+};
+
+cvt : OPCODE_CVT cvtModifier cvtDataType cvtDataType operand ',' operand ',' operand ';'
 {
 	state.instruction( $<text>1, $<value>3 );
 	state.relaxedConvert( $<value>4, @1 );

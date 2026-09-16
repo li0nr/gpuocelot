@@ -2205,7 +2205,17 @@ namespace parser
 				<< " using relaxed conversion rules.", InvalidDataType );
 		}
 	
+		if (statement.instruction.a.addressMode == ir::PTXOperand::Immediate) {
+			statement.instruction.a.type = tokenToDataType(token);
+		}
 		statement.instruction.a.relaxedType = tokenToDataType( token );
+		if (statement.instruction.b.addressMode == ir::PTXOperand::Immediate) {
+			statement.instruction.b.type = tokenToDataType(token);
+		} else if (statement.instruction.b.addressMode == ir::PTXOperand::Register
+			&& ir::PTXOperand::relaxedValid(tokenToDataType(token),
+				statement.instruction.b.type)) {
+			statement.instruction.b.relaxedType = tokenToDataType(token);
+		}
 	}
 	
 	void PTXParser::State::cvtaTo()
@@ -2615,8 +2625,10 @@ namespace parser
 			case TOKEN_B64:  return ir::PTXOperand::b64; break;
 			case TOKEN_PRED: return ir::PTXOperand::pred; break;
 			case TOKEN_F16:  return ir::PTXOperand::f16; break;
+			case TOKEN_F16X2:return ir::PTXOperand::f16x2; break;
 			case TOKEN_F32:  return ir::PTXOperand::f32; break;
 			case TOKEN_BF16: return ir::PTXOperand::bf16; break;
+			case TOKEN_BF16X2:return ir::PTXOperand::bf16x2; break;
 			case TOKEN_TF32: return ir::PTXOperand::tf32; break;
 			case TOKEN_F64:  return ir::PTXOperand::f64; break;
 			default:
@@ -2761,6 +2773,7 @@ namespace parser
 			case TOKEN_SAT: return ir::PTXInstruction::sat; break;
 			case TOKEN_RNI: return ir::PTXInstruction::rni; break;
 			case TOKEN_RN: return ir::PTXInstruction::rn; break;
+			case TOKEN_RNA: return ir::PTXInstruction::rna; break;
 			case TOKEN_RZI: return ir::PTXInstruction::rzi; break;
 			case TOKEN_RZ: return ir::PTXInstruction::rz; break;
 			case TOKEN_RMI: return ir::PTXInstruction::rmi; break;
@@ -2772,6 +2785,7 @@ namespace parser
 			case TOKEN_NAN_MODIFIER: return ir::PTXInstruction::nan; break;
 			case TOKEN_XORSIGN: return ir::PTXInstruction::xorsign; break;
 			case TOKEN_ABS_MODIFIER: return ir::PTXInstruction::abs; break;
+			case TOKEN_RELU: return ir::PTXInstruction::relu; break;
 			default: break;
 		}
 		

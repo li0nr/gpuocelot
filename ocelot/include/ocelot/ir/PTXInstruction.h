@@ -147,6 +147,8 @@ namespace ir {
 			nan = 65536,	//< return NaN if either input is NaN
 			xorsign = 131072,	//< XOR input sign bits
 			abs = 262144,	//< compare absolute input values
+			relu = 524288,	//< clamp negative floating-point results to zero
+			rna = 1048576,	//< round to nearest, ties away from zero
 			Modifier_invalid = 0
 		};
 			

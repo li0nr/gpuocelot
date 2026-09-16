@@ -70,7 +70,9 @@ namespace ir {
 			b16,
 			b32,
 			b64,
-			pred
+			pred,
+			f16x2,
+			bf16x2
 		};
 
 		/*!	Special register names */

@@ -373,9 +373,11 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".b32"			            	{ yylval->value = TOKEN_B32; return TOKEN_B32; }
 ".b64"			            	{ yylval->value = TOKEN_B64; return TOKEN_B64; }
 ".f16"			            	{ yylval->value = TOKEN_F16; return TOKEN_F16; }
+".f16x2"			            { yylval->value = TOKEN_F16X2; return TOKEN_F16X2; }
 ".f64"			            	{ yylval->value = TOKEN_F64; return TOKEN_F64; }
 ".f32"			            	{ yylval->value = TOKEN_F32; return TOKEN_F32; }
 ".bf16"			            	{ yylval->value = TOKEN_BF16; return TOKEN_BF16; }
+".bf16x2"			            { yylval->value = TOKEN_BF16X2; return TOKEN_BF16X2; }
 ".tf32"			            	{ yylval->value = TOKEN_TF32; return TOKEN_TF32; }
 ".pred"		                    { yylval->value = TOKEN_PRED; \
                                     return TOKEN_PRED; }
@@ -407,6 +409,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".hi"                           { yylval->value = TOKEN_HI; return TOKEN_HI; }
 ".lo"                           { yylval->value = TOKEN_LO; return TOKEN_LO; }
 ".rn"                           { yylval->value = TOKEN_RN; return TOKEN_RN; }
+".rna"                          { yylval->value = TOKEN_RNA; return TOKEN_RNA; }
 ".rm"                           { yylval->value = TOKEN_RM; return TOKEN_RM; }
 ".rz"                           { yylval->value = TOKEN_RZ; return TOKEN_RZ; }
 ".rp"                           { yylval->value = TOKEN_RP; return TOKEN_RP; }
@@ -416,6 +419,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".rpi"                          { yylval->value = TOKEN_RPI; return TOKEN_RPI; }
 ".sat"                          { yylval->value = TOKEN_SAT; return TOKEN_SAT; }
 ".ftz"                          { yylval->value = TOKEN_FTZ; return TOKEN_FTZ; }
+".relu"                         { yylval->value = TOKEN_RELU; return TOKEN_RELU; }
 ".approx"                       { yylval->value = TOKEN_APPROX; \
                                     return TOKEN_APPROX; }
 
