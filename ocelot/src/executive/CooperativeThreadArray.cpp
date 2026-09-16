@@ -8297,8 +8297,11 @@ void executive::CooperativeThreadArray::eval_Set(CTAContext &context,
 						break;
 
 					case ir::PTXInstruction::Neu:
-					case ir::PTXInstruction::Ne:
 						t = (a != b);
+						break;
+					case ir::PTXInstruction::Ne:
+						t = !hydrazine::isnan(a) && !hydrazine::isnan(b)
+							&& (a != b);
 						break;
 
 					case ir::PTXInstruction::Ltu:
@@ -8344,7 +8347,6 @@ void executive::CooperativeThreadArray::eval_Set(CTAContext &context,
 					case ir::PTXInstruction::Leu:
 					case ir::PTXInstruction::Gtu:
 					case ir::PTXInstruction::Geu:
-					case ir::PTXInstruction::Num:
 					case ir::PTXInstruction::Nan:
 						// if either is NaN, set t to true
 						t = (hydrazine::isnan(a) || hydrazine::isnan(b) || t);

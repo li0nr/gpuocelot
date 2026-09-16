@@ -5871,6 +5871,33 @@ public:
 			}
 		}
 
+		if (result) {
+			// set.num.u32.f64 is false when either input is NaN.
+			ins = PTXInstruction();
+			ins.opcode = PTXInstruction::Set;
+			ins.type = PTXOperand::u32;
+			ins.d = reg("d", PTXOperand::u32, 3);
+			ins.a = reg("a", PTXOperand::f64, 1);
+			ins.b = reg("b", PTXOperand::f64, 2);
+			ins.comparisonOperator = PTXInstruction::Num;
+
+			cta->setRegAsF64(0, 1,
+				std::numeric_limits<PTXF64>::quiet_NaN());
+			cta->setRegAsF64(0, 2, 1.0);
+			cta->eval_Set(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 3) != 0) {
+				status << "[set.num.u32.f64 NaN test] failed\n";
+				result = false;
+			}
+
+			ins.comparisonOperator = PTXInstruction::Ne;
+			cta->eval_Set(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 3) != 0) {
+				status << "[set.ne.u32.f64 NaN test] failed\n";
+				result = false;
+			}
+		}
+
 		return result;
 	}
 
