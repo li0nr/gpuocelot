@@ -82,7 +82,7 @@
 %token<value> TOKEN_TEXMODE_INDEPENDENT TOKEN_TEXMODE_UNIFIED
 
 %token<value> TOKEN_CONST TOKEN_GLOBAL TOKEN_LOCAL TOKEN_PARAM TOKEN_PRAGMA TOKEN_PTR
-%token<value> TOKEN_REG TOKEN_SHARED TOKEN_TEXREF TOKEN_CTA TOKEN_SURFREF 
+%token<value> TOKEN_REG TOKEN_SHARED TOKEN_SHARED_CTA TOKEN_TEXREF TOKEN_CTA TOKEN_SURFREF
 %token<value> TOKEN_GL TOKEN_SYS TOKEN_SAMPLERREF
 
 %token<value> TOKEN_U32 TOKEN_S32 TOKEN_S8 TOKEN_S16 TOKEN_S64 TOKEN_U8 
@@ -1254,7 +1254,10 @@ exit : OPCODE_EXIT ';'
 	state.instruction( $<text>1 );
 };
 
-isspacep : OPCODE_ISSPACEP addressSpace operand ',' operand ';'
+isspacepAddressSpace : addressSpace
+	| TOKEN_SHARED_CTA { state.addressSpace( TOKEN_SHARED ); };
+
+isspacep : OPCODE_ISSPACEP isspacepAddressSpace operand ',' operand ';'
 {
 	state.instruction( $<text>1, TOKEN_U32 );
 }

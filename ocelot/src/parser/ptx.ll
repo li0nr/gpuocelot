@@ -312,6 +312,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return TOKEN_SAMPLERREF; }
 ".section"                      { yylval->value = TOKEN_SECTION; \
                                     return TOKEN_SECTION; }
+".shared::cta"                  { yylval->value = TOKEN_SHARED; \
+                                    return TOKEN_SHARED_CTA; }
 ".shared"                       { yylval->value = TOKEN_SHARED; \
                                     return TOKEN_SHARED;}
 ".shiftamt"                     { yylval->value = TOKEN_SHIFT_AMOUNT; \

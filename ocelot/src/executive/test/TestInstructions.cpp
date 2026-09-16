@@ -7116,6 +7116,44 @@ public:
 	}
 
 	bool test_Isspacep() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_isspacep() {\n"
+			<< "  .reg .pred %p; .reg .u32 %r; .reg .u64 %rd;\n"
+			<< "  isspacep.shared %p, %r;\n"
+			<< "  isspacep.shared::cta %p, %rd; ret; }\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (...) {
+			status << "isspacep.shared::cta failed to parse\n";
+			return false;
+		}
+		PTXInstruction parsed32, parsed64;
+		unsigned int parsedIsspacep = 0;
+		for (Module::StatementVector::const_iterator i = parsed.statements().begin();
+			i != parsed.statements().end(); ++i) {
+			if (i->directive != PTXStatement::Instr
+				|| i->instruction.opcode != PTXInstruction::Isspacep) continue;
+			if (parsedIsspacep++ == 0) parsed32 = i->instruction;
+			else parsed64 = i->instruction;
+		}
+		if (parsedIsspacep != 2 || parsed32.a.type != PTXOperand::u32
+			|| parsed64.a.type != PTXOperand::u64
+			|| parsed32.addressSpace != PTXInstruction::Shared
+			|| parsed64.addressSpace != PTXInstruction::Shared) return false;
+		std::stringstream serialized(parsed.toString());
+		try { Module reparsed; reparsed.load(serialized); }
+		catch (...) { return false; }
+		if (parsed.toString().find("shared::cta") != std::string::npos) return false;
+		for (const char* space : {"global::cta", "local::cta", "shared.cta",
+			"shared::cluster"}) {
+			std::stringstream invalid;
+			invalid << ".version 8.0\n.target sm_86\n.address_size 64\n"
+				<< ".visible .entry invalid() { .reg .pred %p; .reg .u64 %rd;\n"
+				<< "isspacep." << space << " %p, %rd; ret; }\n";
+			try { Module rejected; rejected.load(invalid); return false; }
+			catch (...) {}
+		}
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Isspacep;
 		ins.addressSpace = PTXInstruction::Shared;
@@ -7141,6 +7179,17 @@ public:
 		PTXU64 shared64, local64;
 		hydrazine::bit_cast(shared64, cta->functionCallStack.sharedMemoryPointer());
 		hydrazine::bit_cast(local64, cta->functionCallStack.localMemoryPointer(0));
+		for (const PTXInstruction& qualified : {parsed32, parsed64}) {
+			const PTXU64 base = shared64;
+			const PTXU64 size = cta->functionCallStack.sharedMemorySize();
+			for (PTXU64 offset : {PTXU64(0), size - 1, size}) {
+				if (qualified.a.type == PTXOperand::u32)
+					cta->setRegAsU32(0, qualified.a.reg, static_cast<PTXU32>(base + offset));
+				else cta->setRegAsU64(0, qualified.a.reg, base + offset);
+				cta->eval_Isspacep(cta->getActiveContext(), qualified);
+				if (cta->getRegAsPredicate(0, qualified.d.reg) != (offset < size)) return false;
+			}
+		}
 		ins.a.type = PTXOperand::u64;
 		ins.addressSpace = PTXInstruction::Shared;
 		cta->setRegAsU64(0, 1, shared64);
