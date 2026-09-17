@@ -7274,7 +7274,29 @@ public:
 		constCta.setRegAsU64(0, 1, base + 16);
 		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
 		if (!constCta.getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Global;
+		ins.pg.condition = PTXOperand::PT;
+		const PTXU64 addresses[] = {base - 1, base, base + 15, base + 16};
+		for (PTXOperand::DataType type : {PTXOperand::u64, PTXOperand::u32}) {
+			ins.a.type = type;
+			for (int i = 0; i < 4; ++i) {
+				if (type == PTXOperand::u32)
+					constCta.setRegAsU32(0, 1, static_cast<PTXU32>(addresses[i]));
+				else constCta.setRegAsU64(0, 1, addresses[i]);
+				constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+				if (constCta.getRegAsPredicate(0, 0) != (i == 0 || i == 3)) return false;
+			}
+		}
+		constCta.setRegAsPredicate(0, 0, true);
+		constCta.setRegAsPredicate(0, 2, false);
+		ins.a.type = PTXOperand::u64;
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 2;
+		constCta.setRegAsU64(0, 1, base);
+		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
+		if (!constCta.getRegAsPredicate(0, 0)) return false;
 		constCta.setRegAsPredicate(0, 2, true);
+		ins.addressSpace = PTXInstruction::Const;
 		constCta.setRegAsU32(0, 1, static_cast<PTXU32>(base));
 		ins.a.type = PTXOperand::u32;
 		constCta.eval_Isspacep(constCta.getActiveContext(), ins);
@@ -7308,6 +7330,11 @@ public:
 		cta->setRegAsU32(0, 1, base32 + static_cast<PTXU32>(size - 1));
 		cta->eval_Isspacep(cta->getActiveContext(), ins);
 		if (!cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Global;
+		cta->setRegAsU32(0, 1, base32);
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		if (!cta->getRegAsPredicate(0, 0)) return false;
+		ins.addressSpace = PTXInstruction::Param;
 		cta->setRegAsPredicate(0, 0, true);
 		cta->setRegAsPredicate(0, 2, false);
 		ins.pg.condition = PTXOperand::Pred;

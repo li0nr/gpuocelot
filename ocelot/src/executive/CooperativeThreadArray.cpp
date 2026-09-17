@@ -112,6 +112,11 @@ static T CTAAbs(T a) {
 	return a;
 }
 
+template<typename T>
+static bool addressInRange(T address, T base, T size) {
+	return address >= base && address - base < size;
+}
+
 template <typename T>
 static T CTARemainder(T a, T b) {
 	if (b == 0) {
@@ -4924,7 +4929,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				hydrazine::bit_cast(base, kernel->ConstMemory);
 				const ir::PTXU32 size = kernel->constMemorySize();
 				setRegAsPredicate(tid, instr.d.reg,
-					ptr >= base && ptr - base < size);
+					addressInRange(ptr, base, size));
 			}
 		}
 		else {
@@ -4935,7 +4940,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				hydrazine::bit_cast(base, kernel->ConstMemory);
 				const ir::PTXU64 size = kernel->constMemorySize();
 				setRegAsPredicate(tid, instr.d.reg,
-					ptr >= base && ptr - base < size);
+					addressInRange(ptr, base, size));
 			}
 		}
 	}
@@ -4953,7 +4958,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				if (!context.predicated(tid, instr)) continue;
 				const ir::PTXU32 ptr = operandAsU32(tid, instr.a);
 				setRegAsPredicate(tid, instr.d.reg,
-					ptr >= base && ptr - base < size);
+					addressInRange(ptr, base, size));
 			}
 		}
 		else {
@@ -4967,7 +4972,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				if (!context.predicated(tid, instr)) continue;
 				const ir::PTXU64 ptr = operandAsU64(tid, instr.a);
 				setRegAsPredicate(tid, instr.d.reg,
-					ptr >= base && ptr - base < size);
+					addressInRange(ptr, base, size));
 			}
 		}
 	}
@@ -4984,7 +4989,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU32 localMemSize = functionCallStack.localMemorySize();
 				hydrazine::bit_cast(localMemPtr,
 					functionCallStack.localMemoryPointer(tid));
-				if (ptr >= localMemPtr && localMemPtr + localMemSize > ptr) {
+				if (addressInRange(ptr, localMemPtr, localMemSize)) {
 					setRegAsPredicate(tid, instr.d.reg, 1);
 				}
 				else {
@@ -5002,7 +5007,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU64 localMemSize = functionCallStack.localMemorySize();
 				hydrazine::bit_cast(localMemPtr,
 					functionCallStack.localMemoryPointer(tid));
-				if (ptr >= localMemPtr && localMemPtr + localMemSize > ptr) {
+				if (addressInRange(ptr, localMemPtr, localMemSize)) {
 					setRegAsPredicate(tid, instr.d.reg, 1);
 				}
 				else {
@@ -5024,7 +5029,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU32 sharedMemSize = functionCallStack.sharedMemorySize();
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
-				if (ptr >= sharedMemPtr && sharedMemPtr + sharedMemSize > ptr) {
+				if (addressInRange(ptr, sharedMemPtr, sharedMemSize)) {
 					setRegAsPredicate(tid, instr.d.reg, 1);
 				}
 				else {
@@ -5042,7 +5047,7 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU64 sharedMemSize = functionCallStack.sharedMemorySize();
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
-				if (ptr >= sharedMemPtr && sharedMemPtr + sharedMemSize > ptr) {
+				if (addressInRange(ptr, sharedMemPtr, sharedMemSize)) {
 					setRegAsPredicate(tid, instr.d.reg, 1);
 				}
 				else {
@@ -5064,18 +5069,17 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU32 localMemSize = functionCallStack.localMemorySize();
 				ir::PTXU32 sharedMemPtr;
 				ir::PTXU32 sharedMemSize = functionCallStack.sharedMemorySize();
+				ir::PTXU32 constMemPtr;
+				const ir::PTXU32 constMemSize = kernel->constMemorySize();
 				hydrazine::bit_cast(localMemPtr,
 					functionCallStack.localMemoryPointer(tid));
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
-				if ((ptr >= sharedMemPtr && sharedMemPtr + sharedMemSize > ptr)
-					|| (ptr >= localMemPtr
-					&& localMemPtr + localMemSize > ptr)) {
-					setRegAsPredicate(tid, instr.d.reg, 0);
-				}
-				else {
-					setRegAsPredicate(tid, instr.d.reg, 1);
-				}
+				hydrazine::bit_cast(constMemPtr, kernel->ConstMemory);
+				const bool inShared = addressInRange(ptr, sharedMemPtr, sharedMemSize);
+				const bool inLocal = addressInRange(ptr, localMemPtr, localMemSize);
+				const bool inConst = addressInRange(ptr, constMemPtr, constMemSize);
+				setRegAsPredicate(tid, instr.d.reg, !(inShared || inLocal || inConst));
 			}
 		}
 		else {
@@ -5088,18 +5092,17 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				ir::PTXU64 localMemSize = functionCallStack.localMemorySize();
 				ir::PTXU64 sharedMemPtr;
 				ir::PTXU64 sharedMemSize = functionCallStack.sharedMemorySize();
+				ir::PTXU64 constMemPtr;
+				const ir::PTXU64 constMemSize = kernel->constMemorySize();
 				hydrazine::bit_cast(localMemPtr,
 					functionCallStack.localMemoryPointer(tid));
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
-				if ((ptr >= sharedMemPtr && sharedMemPtr + sharedMemSize > ptr)
-					|| (ptr >= localMemPtr
-						&& localMemPtr + localMemSize > ptr)) {
-					setRegAsPredicate(tid, instr.d.reg, 0);
-				}
-				else {
-					setRegAsPredicate(tid, instr.d.reg, 1);
-				}
+				hydrazine::bit_cast(constMemPtr, kernel->ConstMemory);
+				const bool inShared = addressInRange(ptr, sharedMemPtr, sharedMemSize);
+				const bool inLocal = addressInRange(ptr, localMemPtr, localMemSize);
+				const bool inConst = addressInRange(ptr, constMemPtr, constMemSize);
+				setRegAsPredicate(tid, instr.d.reg, !(inShared || inLocal || inConst));
 			}
 		}
 	}
