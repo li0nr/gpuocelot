@@ -726,6 +726,65 @@ public:
 			}
 		}
 
+		// f16x2
+		//
+		if (result) {
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = 0;
+			ins.a = reg("r1", PTXOperand::b32, 0);
+			ins.b = reg("r2", PTXOperand::b32, 1);
+			ins.d = reg("r3", PTXOperand::b32, 2);
+			if (!ins.valid().empty()) result = false;
+			cta->reset();
+			auto packedSub = [&](int modifier, PTXU32 a, PTXU32 b,
+				PTXU32 expected, bool alias) {
+				ins.modifier = modifier;
+				ins.d.reg = alias ? 0 : 2;
+				cta->setRegAsU32(0, 0, a);
+				cta->setRegAsU32(0, 1, b);
+				cta->setRegAsU32(0, 2, 0xdeadbeef);
+				cta->eval_Sub(cta->getActiveContext(), ins);
+				return cta->getRegAsU32(0, ins.d.reg) == expected;
+			};
+			result = result && packedSub(0, 0x3e004000, 0x40003e00, 0xb8003800, false);
+			result = result && packedSub(0, 0x3c013c00, 0x90009000, 0x3c023c00, false);
+			result = result && packedSub(PTXInstruction::rn, 0x3c013c00,
+				0x90009000, 0x3c023c00, false);
+			result = result && packedSub(PTXInstruction::ftz, 0x80010001,
+				0, 0x80000000, false);
+			result = result && packedSub(PTXInstruction::ftz, 0x84010401,
+				0x84000400, 0x80000000, false);
+			result = result && packedSub(PTXInstruction::sat, 0x40000000,
+				0x003c00, 0x3c000000, false);
+			result = result && packedSub(PTXInstruction::sat, 0x00007e00,
+				0, 0, false);
+			result = result && packedSub(0, 0x3e004000, 0x40003e00,
+				0xb8003800, true);
+			if (result) {
+				const int previous = hydrazine::fegetround();
+				hydrazine::fesetround(FE_UPWARD);
+				const bool defaultRn = packedSub(0, 0x3c013c00,
+					0x90009000, 0x3c023c00, false);
+				const bool restoredUpward = hydrazine::fegetround() == FE_UPWARD;
+				hydrazine::fesetround(FE_DOWNWARD);
+				const bool cancellation = packedSub(0, 0xbc003c00,
+					0xbc003c00, 0, false);
+				const bool restoredDownward = hydrazine::fegetround() == FE_DOWNWARD;
+				hydrazine::fesetround(previous);
+				if (!defaultRn || !cancellation || !restoredUpward || !restoredDownward)
+					result = false;
+			}
+			ins.modifier = 0;
+			ins.d.reg = 2;
+			ins.pg.condition = PTXOperand::Pred;
+			ins.pg.reg = 3;
+			cta->setRegAsPredicate(0, 3, false);
+			cta->setRegAsU32(0, 2, 0xcafebabe);
+			cta->eval_Sub(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 2) != 0xcafebabe) result = false;
+			ins.pg.condition = PTXOperand::PT;
+		}
+
 		// u16
 		//
 		if (result) {
