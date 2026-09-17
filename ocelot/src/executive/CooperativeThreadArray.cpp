@@ -1842,7 +1842,25 @@ void executive::CooperativeThreadArray::setFunctionParameter(int threadID,
 void executive::CooperativeThreadArray::eval_Abs(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f32) {
+	if (instr.type == ir::PTXOperand::f16 || instr.type == ir::PTXOperand::bf16) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			ir::PTXU16 a = operandAsU16(threadID, instr.a);
+			if (instr.type == ir::PTXOperand::f16) a = ftzF16(instr.modifier, a);
+			setRegAsB16(threadID, instr.d.reg, a & 0x7fff);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f16x2 || instr.type == ir::PTXOperand::bf16x2) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			if (instr.type == ir::PTXOperand::f16x2)
+				a = static_cast<ir::PTXU32>(ftzF16(instr.modifier, a)) |
+					(static_cast<ir::PTXU32>(ftzF16(instr.modifier, a >> 16)) << 16);
+			setRegAsU32(threadID, instr.d.reg, a & 0x7fff7fffu);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f32) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 
 			if (!context.predicated(threadID, instr)) continue;

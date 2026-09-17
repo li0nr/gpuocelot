@@ -327,6 +327,41 @@ public:
 			}
 		}
 
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_abs() { .reg .b16 d16, a16; "
+			<< ".reg .b32 d32, a32; abs.f16 d16, a16; "
+			<< "abs.ftz.f16x2 d32, a32; abs.bf16 d16, a16; "
+			<< "abs.bf16x2 d32, a32; ret; }\n";
+		try { Module parsed; parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "half abs parse failed: " << error.what() << "\n";
+			return false;
+		}
+		auto abs16 = [&](PTXOperand::DataType type, int modifier,
+			PTXU16 a, PTXU16 expected) {
+			ins.opcode = PTXInstruction::Abs; ins.type = type; ins.modifier = modifier;
+			ins.a = reg("a", PTXOperand::b16, 1); ins.d = reg("d", PTXOperand::b16, 0);
+			cta->setRegAsU16(0, 1, a); cta->eval_Abs(cta->getActiveContext(), ins);
+			return cta->getRegAsU16(0, 0) == expected;
+		};
+		result = result && abs16(PTXOperand::f16, 0, 0xbe00, 0x3e00);
+		result = result && abs16(PTXOperand::f16, 0, 0x8001, 0x0001);
+		result = result && abs16(PTXOperand::f16, PTXInstruction::ftz, 0x8001, 0);
+		result = result && abs16(PTXOperand::bf16, 0, 0xbfc0, 0x3fc0);
+		result = result && abs16(PTXOperand::bf16, 0, 0x8001, 0x0001);
+		auto absPacked = [&](PTXOperand::DataType type, int modifier,
+			PTXU32 a, PTXU32 expected) {
+			ins.type = type; ins.modifier = modifier;
+			ins.a = reg("a", PTXOperand::b32, 1); ins.d = reg("d", PTXOperand::b32, 0);
+			cta->setRegAsU32(0, 1, a); cta->eval_Abs(cta->getActiveContext(), ins);
+			return cta->getRegAsU32(0, 0) == expected;
+		};
+		result = result && absPacked(PTXOperand::f16x2, 0, 0xbe003e00, 0x3e003e00);
+		result = result && absPacked(PTXOperand::f16x2, 0, 0x80018001, 0x00010001);
+		result = result && absPacked(PTXOperand::f16x2, PTXInstruction::ftz, 0x80018001, 0);
+		result = result && absPacked(PTXOperand::bf16x2, 0, 0xbfc03fc0, 0x3fc03fc0);
+		result = result && absPacked(PTXOperand::bf16x2, 0, 0x80010000, 0x00010000);
 		status << "Abs test passed.\n";
 
 		return result;
