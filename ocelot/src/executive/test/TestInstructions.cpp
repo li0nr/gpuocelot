@@ -1918,6 +1918,44 @@ public:
 			}
 		}
 
+		// f16x2
+		//
+		if (result) {
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = 0;
+			ins.a = reg("r1", PTXOperand::b32, 0);
+			ins.d = reg("r3", PTXOperand::b32, 2);
+			if (!ins.valid().empty()) {
+				status << "neg.f16x2 rejected\n";
+				return false;
+			}
+			cta->reset();
+			auto packedNeg = [&](int modifier, PTXU32 a, PTXU32 expected) {
+				ins.modifier = modifier;
+				cta->setRegAsU32(0, 0, a);
+				cta->setRegAsU32(0, 2, 0xdeadbeef);
+				cta->eval_Neg(cta->getActiveContext(), ins);
+				return cta->getRegAsU32(0, 2) == expected;
+			};
+			result = result && packedNeg(0, 0x3e00be00, 0xbe003e00);
+			result = result && packedNeg(PTXInstruction::ftz, 0x80010001,
+				0x00008000);
+			std::stringstream ptx;
+			ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+				<< ".visible .entry test_neg() { .reg .b32 d, a; "
+				<< "neg.bf16x2 d, a; ret; }\n";
+			try { Module parsed; parsed.load(ptx); }
+			catch (const std::exception& error) {
+				status << "neg.bf16x2 parse failed: " << error.what() << "\n";
+				return false;
+			}
+			ins.type = PTXOperand::bf16x2;
+			ins.modifier = 0;
+			if (!ins.valid().empty()) return false;
+			result = result && packedNeg(0, 0x3fc03f80, 0xbfc0bf80);
+			result = result && packedNeg(0, 0x80010000, 0x00018000);
+		}
+
 		// s16
 		//
 		if (result) {

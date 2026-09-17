@@ -6757,7 +6757,17 @@ void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::
 */
 void executive::CooperativeThreadArray::eval_Neg(CTAContext &context, const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::bf16) {
+	if (instr.type == ir::PTXOperand::f16x2 || instr.type == ir::PTXOperand::bf16x2) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			a = static_cast<ir::PTXU32>(ftzF16(instr.modifier,
+				static_cast<ir::PTXU16>(a))) |
+				(static_cast<ir::PTXU32>(ftzF16(instr.modifier, a >> 16)) << 16);
+			setRegAsU32(threadID, instr.d.reg, a ^ 0x80008000u);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::bf16) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 

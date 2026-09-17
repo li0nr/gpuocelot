@@ -936,6 +936,12 @@ ftzInstruction2 : ftzInstruction2Opcode optionalFtz dataType operand ','
 	state.instruction( $<text>1, $<value>3 );
 };
 
+ftzInstruction2 : OPCODE_NEG TOKEN_BF16X2 operand ','
+	operand ';'
+{
+	state.instruction( $<text>1, $<value>2 );
+};
+
 ftzInstruction3Opcode : OPCODE_MAX | OPCODE_MIN;
 
 optionalNanModifier : TOKEN_NAN_MODIFIER
