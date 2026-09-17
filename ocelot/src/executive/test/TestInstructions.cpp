@@ -1212,6 +1212,35 @@ public:
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Min;
+		ins.type = PTXOperand::b16;
+		ins.a = reg("a", PTXOperand::b16, 0);
+		ins.b = reg("b", PTXOperand::b16, 1);
+		ins.d = reg("d", PTXOperand::b16, 2);
+		if (ins.valid().empty()) result = false;
+		ins.type = PTXOperand::b32;
+		ins.a = reg("a", PTXOperand::b32, 0);
+		ins.b = reg("b", PTXOperand::b32, 1);
+		ins.d = reg("d", PTXOperand::b32, 2);
+		if (ins.valid().empty()) result = false;
+		ins.type = PTXOperand::b64;
+		ins.a = reg("a", PTXOperand::b64, 0);
+		ins.b = reg("b", PTXOperand::b64, 1);
+		ins.d = reg("d", PTXOperand::b64, 2);
+		if (ins.valid().empty()) result = false;
+		ins.type = PTXOperand::u16;
+		ins.a = reg("a", PTXOperand::b16, 0);
+		ins.b = reg("b", PTXOperand::b16, 1);
+		ins.d = reg("d", PTXOperand::b16, 2);
+		ins.modifier = PTXInstruction::rn;
+		if (ins.valid().empty()) result = false;
+		ins.modifier = PTXInstruction::sat | PTXInstruction::relu;
+		if (ins.valid().empty()) result = false;
+		ins.modifier = 0;
+		ins.carry = PTXInstruction::CC;
+		if (ins.valid().empty()) result = false;
+		ins.carry = PTXInstruction::None;
+		ins.d.type = PTXOperand::b32;
+		if (ins.valid().empty()) result = false;
 
 		// u16
 		//
@@ -1221,14 +1250,16 @@ public:
 			ins.b = reg("r2", PTXOperand::u16, 1);
 			ins.d = reg("r3", PTXOperand::u16, 2);
 
+			const PTXU16 aValues[] = {0, 1, 0, (std::numeric_limits<PTXU16>::max)(), 0x8000};
+			const PTXU16 bValues[] = {0, 0, 1, 0x8000, 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsU16(i, 0, (PTXU16)(i * 2));
-				cta->setRegAsU16(i, 1, (PTXU16)(4 + i));
+				cta->setRegAsU16(i, 0, aValues[i % 5]);
+				cta->setRegAsU16(i, 1, bValues[i % 5]);
 				cta->setRegAsU16(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU16 expected = argmin(i*2, 4+i);
+				PTXU16 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsU16(i, 2) != expected) {
 					result = false;
 					status << "min.u16 incorrect\n";
@@ -1245,14 +1276,16 @@ public:
 			ins.b = reg("r2", PTXOperand::u32, 1);
 			ins.d = reg("r3", PTXOperand::u32, 2);
 
+			const PTXU32 aValues[] = {0, 1, 0, (std::numeric_limits<PTXU32>::max)(), 0x80000000U};
+			const PTXU32 bValues[] = {0, 0, 1, 0x80000000U, 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsU32(i, 0, (PTXU32)(i * 2));
-				cta->setRegAsU32(i, 1, (PTXU32)(4 + i));
+				cta->setRegAsU32(i, 0, aValues[i % 5]);
+				cta->setRegAsU32(i, 1, bValues[i % 5]);
 				cta->setRegAsU32(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU32 expected = argmin(i*2, 4+i);
+				PTXU32 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsU32(i, 2) != expected) {
 					result = false;
 					status << "min.u32 incorrect\n";
@@ -1269,14 +1302,16 @@ public:
 			ins.b = reg("r2", PTXOperand::u64, 1);
 			ins.d = reg("r3", PTXOperand::u64, 2);
 
+			const PTXU64 aValues[] = {0, 1, 0, (std::numeric_limits<PTXU64>::max)(), 0x8000000000000000ULL};
+			const PTXU64 bValues[] = {0, 0, 1, 0x8000000000000000ULL, 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsU64(i, 0, (PTXU64)(i * 2));
-				cta->setRegAsU64(i, 1, (PTXU64)(4 + i));
+				cta->setRegAsU64(i, 0, aValues[i % 5]);
+				cta->setRegAsU64(i, 1, bValues[i % 5]);
 				cta->setRegAsU64(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXU64 expected = argmin(i*2, 4+i);
+				PTXU64 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsU64(i, 2) != expected) {
 					result = false;
 					status << "min.u64 incorrect\n";
@@ -1293,14 +1328,17 @@ public:
 			ins.b = reg("r2", PTXOperand::s16, 1);
 			ins.d = reg("r3", PTXOperand::s16, 2);
 
+			const PTXS16 aValues[] = {0, -1, 0, (std::numeric_limits<PTXS16>::max)(),
+				(std::numeric_limits<PTXS16>::min)()};
+			const PTXS16 bValues[] = {0, 0, -1, (std::numeric_limits<PTXS16>::min)(), 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS16(i, 0, (PTXS16)(i * 2));
-				cta->setRegAsS16(i, 1, (PTXS16)(4 + i));
+				cta->setRegAsS16(i, 0, aValues[i % 5]);
+				cta->setRegAsS16(i, 1, bValues[i % 5]);
 				cta->setRegAsS16(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS16 expected = argmin(i*2, 4+i);
+				PTXS16 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsS16(i, 2) != expected) {
 					result = false;
 					status << "min.s16 incorrect\n";
@@ -1317,14 +1355,17 @@ public:
 			ins.b = reg("r2", PTXOperand::s32, 1);
 			ins.d = reg("r3", PTXOperand::s32, 2);
 
+			const PTXS32 aValues[] = {0, -1, 0, (std::numeric_limits<PTXS32>::max)(),
+				(std::numeric_limits<PTXS32>::min)()};
+			const PTXS32 bValues[] = {0, 0, -1, (std::numeric_limits<PTXS32>::min)(), 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS32(i, 0, (PTXS32)(i * 2));
-				cta->setRegAsS32(i, 1, (PTXS32)(4 + i));
+				cta->setRegAsS32(i, 0, aValues[i % 5]);
+				cta->setRegAsS32(i, 1, bValues[i % 5]);
 				cta->setRegAsS32(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS32 expected = argmin(i*2, 4+i);
+				PTXS32 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsS32(i, 2) != expected) {
 					result = false;
 					status << "min.s32 incorrect\n";
@@ -1341,20 +1382,30 @@ public:
 			ins.b = reg("r2", PTXOperand::s64, 1);
 			ins.d = reg("r3", PTXOperand::s64, 2);
 
+			const PTXS64 aValues[] = {0, -1, 0, (std::numeric_limits<PTXS64>::max)(),
+				(std::numeric_limits<PTXS64>::min)()};
+			const PTXS64 bValues[] = {0, 0, -1, (std::numeric_limits<PTXS64>::min)(), 0};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS64(i, 0, (PTXS64)(i * 2));
-				cta->setRegAsS64(i, 1, (PTXS64)(4 + i));
+				cta->setRegAsS64(i, 0, aValues[i % 5]);
+				cta->setRegAsS64(i, 1, bValues[i % 5]);
 				cta->setRegAsS64(i, 2, 0);
 			}
 			cta->eval_Min(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS64 expected = argmin(i*2, 4+i);
+				PTXS64 expected = argmin(aValues[i % 5], bValues[i % 5]);
 				if (cta->getRegAsS64(i, 2) != expected) {
 					result = false;
 					status << "min.s64 incorrect\n";
 					break;
 				}
 			}
+			ins.pg.condition = PTXOperand::Pred;
+			ins.pg.reg = 3;
+			cta->setRegAsPredicate(0, 3, false);
+			cta->setRegAsS64(0, 2, 0x123456789LL);
+			cta->eval_Min(cta->getActiveContext(), ins);
+			if (cta->getRegAsS64(0, 2) != 0x123456789LL) result = false;
+			ins.pg.condition = PTXOperand::PT;
 		}
 
 		// f32

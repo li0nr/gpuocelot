@@ -1541,6 +1541,16 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if (type == PTXOperand::b16 || type == PTXOperand::b32 ||
+				type == PTXOperand::b64) {
+				return "invalid instruction type " + PTXOperand::toString(type);
+			}
+			if ((type == PTXOperand::u16 || type == PTXOperand::u32 ||
+				type == PTXOperand::u64 || type == PTXOperand::s16 ||
+				type == PTXOperand::s32 || type == PTXOperand::s64) &&
+				(modifier || carry != None)) {
+				return "integer min does not support modifiers or carry out";
+			}
 			if( !PTXOperand::valid( type, a.type ) ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
