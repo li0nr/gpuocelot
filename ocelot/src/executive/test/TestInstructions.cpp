@@ -6431,6 +6431,58 @@ public:
 		for (int thread = 0; thread < threadCount; ++thread) {
 			if (cta->getRegAsU64(thread, 1) != 1) return false;
 		}
+		cta->reset();
+		cta->functionCallStack.pushFrame(0, kernel->registerCount(), 16, 0, 0, 0, 0);
+		ins.pg.condition = PTXOperand::PT;
+		ins.addressSpace = PTXInstruction::Local;
+		for (PTXOperand::DataType type : {PTXOperand::u32, PTXOperand::u64}) {
+			ins.type = type;
+			for (PTXOperand::RegisterType source : {0u, 1u}) {
+				for (PTXU64 offset : {PTXU64(0), PTXU64(15)}) {
+					ins.toAddrSpace = false;
+					ins.a = reg("a", type, source);
+					ins.d = reg("d", type, 2);
+					for (int thread = 0; thread < 2; ++thread) {
+						if (type == PTXOperand::u32)
+							cta->setRegAsU32(thread, source, static_cast<PTXU32>(offset));
+						else cta->setRegAsU64(thread, source, offset);
+					}
+					cta->eval_Cvta(cta->getActiveContext(), ins);
+					for (int thread = 0; thread < 2; ++thread) {
+						const PTXU64 expected = reinterpret_cast<PTXU64>(
+							cta->functionCallStack.localMemoryPointer(thread)) + offset;
+						if ((type == PTXOperand::u32
+							? cta->getRegAsU32(thread, 2) : cta->getRegAsU64(thread, 2))
+							!= (type == PTXOperand::u32 ? static_cast<PTXU32>(expected) : expected))
+							return false;
+					}
+					ins.toAddrSpace = true;
+					ins.a = reg("g", type, 2);
+					ins.d = reg("o", type, 3);
+					cta->eval_Cvta(cta->getActiveContext(), ins);
+					for (int thread = 0; thread < 2; ++thread)
+						if ((type == PTXOperand::u32
+							? cta->getRegAsU32(thread, 3) : cta->getRegAsU64(thread, 3))
+							!= (type == PTXOperand::u32 ? static_cast<PTXU32>(offset) : offset))
+							return false;
+				}
+			}
+		}
+		ins.type = PTXOperand::u64;
+		ins.toAddrSpace = false;
+		ins.addressSpace = PTXInstruction::Local;
+		ins.a = reg("a", PTXOperand::u64, 1);
+		ins.d = reg("d", PTXOperand::u64, 2);
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 4;
+		for (int thread = 0; thread < 2; ++thread) {
+			cta->setRegAsPredicate(thread, 4, false);
+			cta->setRegAsU64(thread, 2, 0xdeadbeefULL);
+		}
+		cta->eval_Cvta(cta->getActiveContext(), ins);
+		for (int thread = 0; thread < 2; ++thread)
+			if (cta->getRegAsU64(thread, 2) != 0xdeadbeefULL) return false;
+		cta->functionCallStack.popFrame();
 		return true;
 	}
 

@@ -4263,7 +4263,8 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 
 				if (instr.addressSpace == ir::PTXInstruction::Local) {
 					ir::PTXU32 localMemPtr;
-					if (!instr.a.isGlobalLocal) {
+					if (instr.a.addressMode != ir::PTXOperand::Address
+						|| !instr.a.isGlobalLocal) {
 						hydrazine::bit_cast(localMemPtr,
 							functionCallStack.localMemoryPointer(tid));
 					}
@@ -4320,7 +4321,8 @@ void executive::CooperativeThreadArray::eval_Cvta(CTAContext &context,
 
 				if (instr.addressSpace == ir::PTXInstruction::Local) {
 					ir::PTXU64 localMemPtr;
-					if (!instr.a.isGlobalLocal) {
+					if (instr.a.addressMode != ir::PTXOperand::Address
+						|| !instr.a.isGlobalLocal) {
 						hydrazine::bit_cast(localMemPtr,
 							functionCallStack.localMemoryPointer(tid));
 					}
