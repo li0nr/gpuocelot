@@ -4750,7 +4750,26 @@ void executive::CooperativeThreadArray::eval_Exit(CTAContext &context,
 void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f32) {
+	if (instr.type == ir::PTXOperand::f16x2) {
+		for (int tid = 0; tid < threadCount; tid++) {
+			if (!context.predicated(tid, instr)) continue;
+			ir::PTXU32 a = operandAsU32(tid, instr.a), b = operandAsU32(tid, instr.b);
+			ir::PTXU32 c = operandAsU32(tid, instr.c);
+			ir::PTXU16 al = static_cast<ir::PTXU16>(a), ah = a >> 16;
+			ir::PTXU16 bl = static_cast<ir::PTXU16>(b), bh = b >> 16;
+			ir::PTXU16 cl = static_cast<ir::PTXU16>(c), ch = c >> 16;
+			auto fma = [&](ir::PTXU16 x, ir::PTXU16 y, ir::PTXU16 z) {
+				return ftzF16(instr.modifier, toF16(roundedFma<double>(
+					f16ToF32(ftzF16(instr.modifier, x)),
+					f16ToF32(ftzF16(instr.modifier, y)),
+					f16ToF32(ftzF16(instr.modifier, z)), instr.modifier), instr.modifier));
+			};
+			ir::PTXU16 dl = fma(al, bl, cl), dh = fma(ah, bh, ch);
+			setRegAsU32(tid, instr.d.reg, static_cast<ir::PTXU32>(dl) |
+				(static_cast<ir::PTXU32>(dh) << 16));
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f32) {
 		for (int tid = 0; tid < threadCount; tid++) {
 			if (!context.predicated(tid, instr)) continue;
 			ir::PTXF32 d = 0,

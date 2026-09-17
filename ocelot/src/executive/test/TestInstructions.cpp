@@ -3894,6 +3894,60 @@ public:
 			}
 		}
 
+		ins.type = PTXOperand::f16x2;
+		ins.a = reg("a", PTXOperand::b32, 0);
+		ins.b = reg("b", PTXOperand::b32, 1);
+		ins.c = reg("c", PTXOperand::b32, 3);
+		ins.d = reg("d", PTXOperand::b32, 2);
+		if (!ins.valid().empty()) {
+			status << "fma.rn.f16x2 rejected\n";
+			return false;
+		}
+		cta->reset();
+		auto packedFma = [&](int modifier, PTXU32 a, PTXU32 b, PTXU32 c,
+			PTXU32 expected, bool alias) {
+			ins.modifier = modifier;
+			ins.d.reg = alias ? 0 : 2;
+			cta->setRegAsU32(0, 0, a); cta->setRegAsU32(0, 1, b);
+			cta->setRegAsU32(0, 3, c); cta->setRegAsU32(0, 2, 0xdeadbeef);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			return cta->getRegAsU32(0, ins.d.reg) == expected;
+		};
+		if (!packedFma(PTXInstruction::rn, 0x40003c01, 0x42003c01,
+			0x3c00bc02, 0x47000010, false)
+			|| !packedFma(PTXInstruction::rn, 0x3c033c01, 0x3e003e00,
+				0x00018001, 0x3e053e01, false)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x40003c01, 0x42003c01, 0x3c00bc02, 0x47000000, false)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x3c033c01, 0x3e003e00, 0x00018001, 0x3e043e02, false)
+			|| !packedFma(PTXInstruction::rn, 0x00010001, 0x3c003c00,
+				0, 0x00010001, false)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x00010001, 0x3c003c00, 0, 0, false)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::sat,
+				0x7e004000, 0x3c003c00, 0, 0x00003c00, false)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::relu,
+				0xbc007e00, 0x3c003c00, 0, 0x00007fff, false)
+			|| !packedFma(PTXInstruction::rn, 0x40003c01, 0x42003c01,
+				0x3c00bc02, 0x47000010, true)) return false;
+		const int previous = hydrazine::fegetround();
+		hydrazine::fesetround(FE_UPWARD);
+		const bool hostRn = packedFma(PTXInstruction::rn, 0x3c003c00,
+			0x3c013c01, 0x90009000, 0x3c003c00, false);
+		const bool restored = hydrazine::fegetround() == FE_UPWARD;
+		hydrazine::fesetround(previous);
+		if (!hostRn || !restored) return false;
+		ins.modifier = PTXInstruction::rn;
+		ins.d.reg = 2;
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 4;
+		cta->setRegAsPredicate(0, 4, false);
+		cta->setRegAsU32(0, 2, 0xcafebabe);
+		cta->eval_Fma(cta->getActiveContext(), ins);
+		ins.pg.condition = PTXOperand::PT;
+		if (cta->getRegAsU32(0, 2) != 0xcafebabe) return false;
+
 		return true;
 	}
 
