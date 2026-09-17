@@ -6542,7 +6542,27 @@ void executive::CooperativeThreadArray::eval_Mul24(CTAContext &context, const ir
 */
 void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f16) {
+	if (instr.type == ir::PTXOperand::f16x2) {
+		const int effectiveModifier = instr.modifier | ir::PTXInstruction::rn;
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			ir::PTXU32 b = operandAsU32(threadID, instr.b);
+			ir::PTXU16 al = static_cast<ir::PTXU16>(a), ah = a >> 16;
+			ir::PTXU16 bl = static_cast<ir::PTXU16>(b), bh = b >> 16;
+			ir::PTXU16 dl = ftzF16(effectiveModifier, toF16(
+				roundedMul(f16ToF32(ftzF16(effectiveModifier, al)),
+					f16ToF32(ftzF16(effectiveModifier, bl)), effectiveModifier),
+				effectiveModifier));
+			ir::PTXU16 dh = ftzF16(effectiveModifier, toF16(
+				roundedMul(f16ToF32(ftzF16(effectiveModifier, ah)),
+					f16ToF32(ftzF16(effectiveModifier, bh)), effectiveModifier),
+				effectiveModifier));
+			setRegAsU32(threadID, instr.d.reg, static_cast<ir::PTXU32>(dl) |
+				(static_cast<ir::PTXU32>(dh) << 16));
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f16) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 

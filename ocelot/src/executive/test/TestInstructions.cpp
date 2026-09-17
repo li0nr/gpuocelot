@@ -2825,6 +2825,70 @@ public:
 			}
 		}
 
+		// f16x2
+		//
+		if (result) {
+			ins.type = PTXOperand::f16x2;
+			ins.modifier = 0;
+			ins.a = reg("r1", PTXOperand::b32, 0);
+			ins.b = reg("r2", PTXOperand::b32, 1);
+			ins.d = reg("r3", PTXOperand::b32, 2);
+			if (!ins.valid().empty()) result = false;
+			cta->reset();
+			auto packedMul = [&](int modifier, PTXU32 a, PTXU32 b,
+				PTXU32 expected, bool alias) {
+				ins.modifier = modifier;
+				ins.d.reg = alias ? 0 : 2;
+				cta->setRegAsU32(0, 0, a);
+				cta->setRegAsU32(0, 1, b);
+				cta->setRegAsU32(0, 2, 0xdeadbeef);
+				cta->eval_Mul(cta->getActiveContext(), ins);
+				return cta->getRegAsU32(0, ins.d.reg) == expected;
+			};
+			result = result && packedMul(0, 0xc000be00, 0x3e00c000,
+				0xc2004200, false);
+			result = result && packedMul(0, 0x3c033c01, 0x3e003e00,
+				0x3e043e02, false);
+			result = result && packedMul(PTXInstruction::rn, 0x3c033c01,
+				0x3e003e00, 0x3e043e02, false);
+			result = result && packedMul(0, 0x00010001, 0x3c003c00,
+				0x00010001, false);
+			result = result && packedMul(PTXInstruction::ftz, 0x00010001,
+				0x3c003c00, 0, false);
+			result = result && packedMul(0, 0x84000400, 0x38003800,
+				0x82000200, false);
+			result = result && packedMul(PTXInstruction::ftz, 0x84000400,
+				0x38003800, 0x80000000, false);
+			result = result && packedMul(PTXInstruction::sat, 0xbc004000,
+				0x3c003c00, 0x00003c00, false);
+			result = result && packedMul(PTXInstruction::sat, 0x3c003800,
+				0x3c003c00, 0x3c003800, false);
+			result = result && packedMul(PTXInstruction::sat, 0x7e007e00,
+				0x3c003c00, 0, false);
+			result = result && packedMul(0, 0x00008000, 0xc0004000,
+				0x80008000, false);
+			result = result && packedMul(0, 0xc000be00, 0x3e00c000,
+				0xc2004200, true);
+			if (result) {
+				const int previous = hydrazine::fegetround();
+				hydrazine::fesetround(FE_UPWARD);
+				const bool defaultRn = packedMul(0, 0x3c033c01,
+					0x3e003e00, 0x3e043e02, false);
+				const bool restored = hydrazine::fegetround() == FE_UPWARD;
+				hydrazine::fesetround(previous);
+				if (!defaultRn || !restored) result = false;
+			}
+			ins.modifier = 0;
+			ins.d.reg = 2;
+			ins.pg.condition = PTXOperand::Pred;
+			ins.pg.reg = 3;
+			cta->setRegAsPredicate(0, 3, false);
+			cta->setRegAsU32(0, 2, 0xcafebabe);
+			cta->eval_Mul(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 2) != 0xcafebabe) result = false;
+			ins.pg.condition = PTXOperand::PT;
+		}
+
 		// u16
 		//
 		if (result) {
