@@ -1655,6 +1655,10 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if ((type == PTXOperand::s16 || type == PTXOperand::s32 ||
+				type == PTXOperand::s64) && (modifier || carry != None)) {
+				return "integer neg does not support modifiers or carry out";
+			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );

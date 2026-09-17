@@ -6741,7 +6741,7 @@ void executive::CooperativeThreadArray::eval_Neg(CTAContext &context, const ir::
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXS16 d, a = operandAsS16(threadID, instr.a);
-			d = -a;
+			d = a == (std::numeric_limits<ir::PTXS16>::min)() ? a : -a;
 			setRegAsS16(threadID, instr.d.reg, d);
 		}
 	}
@@ -6750,7 +6750,7 @@ void executive::CooperativeThreadArray::eval_Neg(CTAContext &context, const ir::
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXS32 d, a = operandAsS32(threadID, instr.a);
-			d = -a;
+			d = a == (std::numeric_limits<ir::PTXS32>::min)() ? a : -a;
 			setRegAsS32(threadID, instr.d.reg, d);
 		}
 	}
@@ -6759,7 +6759,7 @@ void executive::CooperativeThreadArray::eval_Neg(CTAContext &context, const ir::
 			if (!context.predicated(threadID, instr)) continue;
 
 			ir::PTXS64 d, a = operandAsS64(threadID, instr.a);
-			d = -a;
+			d = a == (std::numeric_limits<ir::PTXS64>::min)() ? a : -a;
 			setRegAsS64(threadID, instr.d.reg, d);
 		}
 	}

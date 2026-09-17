@@ -1707,16 +1707,28 @@ public:
 		//
 		if (result) {
 			ins.type = PTXOperand::s16;
+			ins.modifier = PTXInstruction::rn;
 			ins.a = reg("r1", PTXOperand::s16, 0);
 			ins.d = reg("r3", PTXOperand::s16, 2);
+			if (ins.valid().empty()) result = false;
+			ins.modifier = PTXInstruction::sat;
+			if (ins.valid().empty()) result = false;
+			ins.modifier = PTXInstruction::ftz;
+			if (ins.valid().empty()) result = false;
+			ins.modifier = 0;
+			ins.carry = PTXInstruction::CC;
+			if (ins.valid().empty()) result = false;
+			ins.carry = PTXInstruction::None;
 
+			const PTXS16 values[] = {0, 1, -1, (std::numeric_limits<PTXS16>::max)(),
+				(std::numeric_limits<PTXS16>::min)()};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS16(i, 0, (PTXS16)(i * 2));
+				cta->setRegAsS16(i, 0, values[i % 5]);
 				cta->setRegAsS16(i, 2, 0);
 			}
 			cta->eval_Neg(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS16 expected = -(i*2);
+				PTXS16 expected = values[i % 5] == values[4] ? values[4] : -values[i % 5];
 				if (cta->getRegAsS16(i, 2) != expected) {
 					result = false;
 					status << "neg.s16 incorrect\n";
@@ -1733,13 +1745,15 @@ public:
 			ins.b = reg("r2", PTXOperand::s32, 1);
 			ins.d = reg("r3", PTXOperand::s32, 2);
 
+			const PTXS32 values[] = {0, 1, -1, (std::numeric_limits<PTXS32>::max)(),
+				(std::numeric_limits<PTXS32>::min)()};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS32(i, 0, (PTXS32)(i * 2));
+				cta->setRegAsS32(i, 0, values[i % 5]);
 				cta->setRegAsS32(i, 2, 0);
 			}
 			cta->eval_Neg(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS32 expected = -(i*2);
+				PTXS32 expected = values[i % 5] == values[4] ? values[4] : -values[i % 5];
 				if (cta->getRegAsS32(i, 2) != expected) {
 					result = false;
 					status << "neg.s32 incorrect\n";
@@ -1755,19 +1769,29 @@ public:
 			ins.a = reg("r1", PTXOperand::s64, 0);
 			ins.d = reg("r3", PTXOperand::s64, 2);
 
+			const PTXS64 values[] = {0, 1, -1, (std::numeric_limits<PTXS64>::max)(),
+				(std::numeric_limits<PTXS64>::min)()};
 			for (int i = 0; i < threadCount; i++) {
-				cta->setRegAsS64(i, 0, (PTXS64)(i * 2));
+				cta->setRegAsS64(i, 0, values[i % 5]);
 				cta->setRegAsS64(i, 2, 0);
 			}
 			cta->eval_Neg(cta->getActiveContext(), ins);
 			for (int i = 0; i < threadCount; i++) {
-				PTXS64 expected = -(i*2);
+				PTXS64 expected = values[i % 5] == values[4] ? values[4] : -values[i % 5];
 				if (cta->getRegAsS64(i, 2) != expected) {
 					result = false;
 					status << "neg.s64 incorrect\n";
 					break;
 				}
 			}
+			ins.pg.condition = PTXOperand::Pred;
+			ins.pg.reg = 3;
+			cta->setRegAsPredicate(0, 3, false);
+			cta->setRegAsS64(0, 0, 1);
+			cta->setRegAsS64(0, 2, 0x123456789LL);
+			cta->eval_Neg(cta->getActiveContext(), ins);
+			if (cta->getRegAsS64(0, 2) != 0x123456789LL) result = false;
+			ins.pg.condition = PTXOperand::PT;
 		}
 
 		// f32
