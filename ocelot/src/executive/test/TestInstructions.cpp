@@ -4549,6 +4549,71 @@ public:
 		return cta->getRegAsU32(0, 0) == 0xdeadbeefu;
 	}
 
+	bool test_Popc() {
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Popc;
+		ins.type = PTXOperand::b32;
+		ins.a = reg("a", PTXOperand::b32, 1);
+		ins.d = reg("d", PTXOperand::b32, 0);
+		if (!ins.valid().empty()) return false;
+		ins.d.type = PTXOperand::u32;
+		if (!ins.valid().empty()) return false;
+		ins.d.type = PTXOperand::b32;
+		ins.modifier = PTXInstruction::rn;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::ftz;
+		if (ins.valid().empty()) return false;
+		ins.modifier = PTXInstruction::sat;
+		if (ins.valid().empty()) return false;
+		ins.modifier = 0;
+		ins.carry = PTXInstruction::CC;
+		if (ins.valid().empty()) return false;
+		ins.carry = PTXInstruction::None;
+		ins.type = PTXOperand::u32;
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::b32;
+		ins.a.type = PTXOperand::b64;
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::b64;
+		ins.a.type = PTXOperand::b64;
+		ins.d.type = PTXOperand::b64;
+		if (ins.valid().empty()) return false;
+		ins.d.type = PTXOperand::b32;
+		if (!ins.valid().empty()) return false;
+		ins.type = PTXOperand::b32;
+		ins.a.type = PTXOperand::b32;
+		cta->reset();
+		const PTXU32 values[] = {0, 0xffffffffU, 0x55, 0xaa, 1, 0x80000000U};
+		const PTXU32 expected[] = {0, 32, 4, 4, 1, 1};
+		for (unsigned i = 0; i < sizeof(values) / sizeof(*values); ++i) {
+			cta->setRegAsU32(0, 1, values[i]);
+			cta->eval_Popc(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != expected[i]) return false;
+		}
+		ins.pg.condition = PTXOperand::Pred;
+		ins.pg.reg = 3;
+		cta->setRegAsPredicate(0, 3, false);
+		cta->setRegAsU32(0, 0, 0xdeadbeef);
+		cta->eval_Popc(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 0) != 0xdeadbeef) return false;
+		ins.pg.condition = PTXOperand::PT;
+		ins.type = PTXOperand::b64;
+		ins.a.type = PTXOperand::b64;
+		const PTXU64 values64[] = {0, 0xffffffffffffffffULL, 0x55, 0xaa, 1,
+			0x8000000000000000ULL};
+		const PTXU32 expected64[] = {0, 64, 4, 4, 1, 1};
+		for (unsigned i = 0; i < sizeof(values64) / sizeof(*values64); ++i) {
+			cta->setRegAsU64(0, 1, values64[i]);
+			cta->eval_Popc(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 0) != expected64[i]) return false;
+		}
+		ins.pg.condition = PTXOperand::Pred;
+		cta->setRegAsPredicate(0, 3, false);
+		cta->setRegAsU32(0, 0, 0xcafebabe);
+		cta->eval_Popc(cta->getActiveContext(), ins);
+		return cta->getRegAsU32(0, 0) == 0xcafebabe;
+	}
+
 	bool test_Lop3() {
 		std::stringstream ptx;
 		ptx << ".version 8.2\n"
@@ -7699,6 +7764,7 @@ public:
 			result = (result && test_Bfe());
 			result = (result && test_Bfi());
 			result = (result && test_Bfind());
+			result = (result && test_Popc());
 			result = (result && test_Bmsk());
 			result = (result && test_Lop3());
 			result = (result && test_And());

@@ -1726,6 +1726,9 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if (modifier || carry != None) {
+				return "popc does not support modifiers or carry out";
+			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
 					+ " cannot be assigned to " + PTXOperand::toString( type );
