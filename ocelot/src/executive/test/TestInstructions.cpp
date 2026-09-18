@@ -1346,8 +1346,10 @@ public:
 		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
 			<< ".visible .entry test_minmax() {\n"
 			<< "  .reg .f32 d, a, b;\n"
+			<< "  .reg .b16 hd, ha, hb;\n"
 			<< "  min.NaN.f32 d, a, b;\n"
 			<< "  min.xorsign.abs.f32 d, a, b;\n"
+			<< "  min.NaN.f16 hd, ha, hb; min.xorsign.abs.f16 hd, ha, hb; max.NaN.f16 hd, ha, hb; max.xorsign.abs.f16 hd, ha, hb;\n"
 			<< "  max.NaN.f32 d, a, b;\n"
 			<< "  max.xorsign.abs.f32 d, a, b;\n  ret;\n}\n";
 		Module parsed;
@@ -1389,7 +1391,28 @@ public:
 		ins.carry = PTXInstruction::None;
 		ins.d.type = PTXOperand::b32;
 		if (ins.valid().empty()) result = false;
-
+		ins.type = PTXOperand::f16; ins.modifier = 0;
+		ins.a = reg("a", PTXOperand::b16, 0); ins.b = reg("b", PTXOperand::b16, 1);
+		ins.d = reg("d", PTXOperand::b16, 2);
+		cta->reset();
+		struct HalfCase { int modifier; PTXU16 a, b, minimum, maximum; };
+		const HalfCase cases[] = {
+			{0,0x3c00,0x4000,0x3c00,0x4000}, {0,0x7c00,0x7c00,0x7c00,0x7c00},
+			{0,0,0x8000,0x8000,0}, {0,0x8000,0,0x8000,0},
+			{0,0x7e00,0x3c00,0x3c00,0x3c00}, {0,0x3c00,0x7e00,0x3c00,0x3c00},
+			{0,0x7e00,0xfe00,0x7fff,0x7fff}, {PTXInstruction::nan,0x7e00,0x3c00,0x7fff,0x7fff},
+			{0,0x8001,2,0x8001,2}, {PTXInstruction::ftz,0x8001,2,0x8000,0},
+			{PTXInstruction::xorsign|PTXInstruction::abs,0xbc00,0x3e00,0xbc00,0xbe00},
+			{PTXInstruction::xorsign|PTXInstruction::abs,0xfe00,0x3c00,0xbc00,0xbc00},
+			{PTXInstruction::ftz|PTXInstruction::nan|PTXInstruction::xorsign|PTXInstruction::abs,
+				0x8001,0x7e00,0x7fff,0x7fff}};
+		for (const HalfCase& c : cases) for (int maximum = 0; maximum < 2; ++maximum) {
+			ins.opcode = maximum ? PTXInstruction::Max : PTXInstruction::Min;
+			ins.modifier = c.modifier; cta->setRegAsU16(0, 0, c.a); cta->setRegAsU16(0, 1, c.b);
+			if (maximum) cta->eval_Max(cta->getActiveContext(), ins);
+			else cta->eval_Min(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 2) != (maximum ? c.maximum : c.minimum)) result = false;
+		}
 		// u16
 		//
 		if (result) {

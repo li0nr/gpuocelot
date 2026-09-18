@@ -490,6 +490,41 @@ static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
 	return static_cast<ir::PTXF32>(half);
 }
 
+// PTX ISA 9.3, 5.2.3 defines f16; CUDA Math API defines CUDART_NAN_FP16.
+static const ir::PTXU16 f16SignMask = 0x8000u, f16MagnitudeMask = 0x7fffu;
+static const ir::PTXU16 f16ExponentMask = 0x7c00u, f16MantissaMask = 0x03ffu;
+static const ir::PTXU16 f16CanonicalNan = 0x7fffu;
+
+static bool isNanF16(ir::PTXU16 value) {
+	return (value & f16ExponentMask) == f16ExponentMask && (value & f16MantissaMask) != 0;
+}
+
+static ir::PTXU16 minMaxF16(int modifier, ir::PTXU16 a, ir::PTXU16 b,
+	bool maximum) {
+	a = ftzF16(modifier, a);
+	b = ftzF16(modifier, b);
+	ir::PTXU16 xorSign = 0;
+	if (modifier & ir::PTXInstruction::xorsign) {
+		xorSign = (a ^ b) & f16SignMask;
+		a &= f16MagnitudeMask;
+		b &= f16MagnitudeMask;
+	}
+	const bool aNan = isNanF16(a);
+	const bool bNan = isNanF16(b);
+	const bool bothZero = ((a | b) & f16MagnitudeMask) == 0;
+	if (aNan && bNan) return f16CanonicalNan;
+	if ((modifier & ir::PTXInstruction::nan) && (aNan || bNan)) return f16CanonicalNan;
+	ir::PTXU16 d;
+	if (aNan) d = b;
+	else if (bNan) d = a;
+	else if (bothZero) {
+		d = maximum ? (a & b) : (a | b);
+	}
+	else if (maximum) d = f16ToF32(a) > f16ToF32(b) ? a : b;
+	else d = f16ToF32(a) < f16ToF32(b) ? a : b;
+	return (modifier & ir::PTXInstruction::xorsign) ? (d & f16MagnitudeMask) | xorSign : d;
+}
+
 static ir::PTXF32 tf32FromF32(ir::PTXF32 value) {
 	ir::PTXU32 bits = hydrazine::bit_cast<ir::PTXU32>(value);
 	if ((bits & 0x7f800000u) == 0x7f800000u) return value;
@@ -5976,27 +6011,10 @@ void executive::CooperativeThreadArray::eval_Max(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
-				operandAsU16(threadID, instr.a)));
-			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
-				operandAsU16(threadID, instr.b)));
-			ir::PTXF32 d;
+			ir::PTXU16 d = minMaxF16(instr.modifier,
+				operandAsU16(threadID, instr.a), operandAsU16(threadID, instr.b), true);
 
-			if(hydrazine::isnan(a))
-			{
-				d = b;
-			}
-			else if(hydrazine::isnan(b))
-			{
-				d = a;
-			}
-			else
-			{
-				d = ftz(instr.modifier, a > b ? a : b);
-			}
-
-			setRegAsB16(threadID, instr.d.reg,
-				toF16(d, instr.modifier));
+			setRegAsB16(threadID, instr.d.reg, d);
 		}
 	}
 	else if (instr.type == ir::PTXOperand::s16) {
@@ -6070,7 +6088,14 @@ void executive::CooperativeThreadArray::eval_Max(CTAContext &context,
 void executive::CooperativeThreadArray::eval_Min(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f32) {
+	if (instr.type == ir::PTXOperand::f16) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			setRegAsB16(threadID, instr.d.reg, minMaxF16(instr.modifier,
+				operandAsU16(threadID, instr.a), operandAsU16(threadID, instr.b), false));
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f32) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 			ir::PTXF32 a = operandAsF32(threadID, instr.a),
