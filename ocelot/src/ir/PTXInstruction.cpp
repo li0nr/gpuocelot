@@ -511,9 +511,12 @@ std::string ir::PTXInstruction::valid() const {
 	if( opcode == Min || opcode == Max ) {
 		const unsigned int fp32Modifiers = nan | xorsign | abs;
 		if( (modifier & fp32Modifiers) && type != PTXOperand::f32
-			&& type != PTXOperand::f16 ) {
-			return "NaN and xorsign.abs modifiers require f32 or f16";
+			&& type != PTXOperand::f16 && type != PTXOperand::f16x2
+			&& type != PTXOperand::bf16 && type != PTXOperand::bf16x2 ) {
+			return "NaN and xorsign.abs modifiers require a floating type";
 		}
+		if ((modifier & ftz) && (type == PTXOperand::bf16 || type == PTXOperand::bf16x2))
+			return "ftz is invalid for bf16 min/max";
 		if( (modifier & (xorsign | abs)) != 0
 			&& (modifier & (xorsign | abs)) != (xorsign | abs) ) {
 			return "xorsign and abs modifiers must be specified together";

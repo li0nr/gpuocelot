@@ -16,6 +16,7 @@
 #include <hydrazine/debug.h>
 
 #include <ocelot/ir/Module.h>
+#include <ocelot/ir/ControlFlowGraph.h>
 #include <ocelot/executive/EmulatedKernel.h>
 #include <ocelot/executive/RuntimeException.h>
 #include <ocelot/executive/CooperativeThreadArray.h>
@@ -1347,9 +1348,16 @@ public:
 			<< ".visible .entry test_minmax() {\n"
 			<< "  .reg .f32 d, a, b;\n"
 			<< "  .reg .b16 hd, ha, hb;\n"
+			<< "  .reg .b32 pd, pa, pb;\n"
 			<< "  min.NaN.f32 d, a, b;\n"
 			<< "  min.xorsign.abs.f32 d, a, b;\n"
 			<< "  min.NaN.f16 hd, ha, hb; min.xorsign.abs.f16 hd, ha, hb; max.NaN.f16 hd, ha, hb; max.xorsign.abs.f16 hd, ha, hb;\n"
+			<< "  min.bf16 hd, ha, hb; min.NaN.bf16 hd, ha, hb; min.xorsign.abs.bf16 hd, ha, hb;\n"
+			<< "  max.bf16 hd, ha, hb; max.NaN.bf16 hd, ha, hb; max.xorsign.abs.bf16 hd, ha, hb;\n"
+			<< "  min.f16x2 pd, pa, pb; min.ftz.f16x2 pd, pa, pb; min.NaN.f16x2 pd, pa, pb; min.xorsign.abs.f16x2 pd, pa, pb;\n"
+			<< "  max.f16x2 pd, pa, pb; max.ftz.f16x2 pd, pa, pb; max.NaN.f16x2 pd, pa, pb; max.xorsign.abs.f16x2 pd, pa, pb;\n"
+			<< "  min.bf16x2 pd, pa, pb; min.NaN.bf16x2 pd, pa, pb; min.xorsign.abs.bf16x2 pd, pa, pb;\n"
+			<< "  max.bf16x2 pd, pa, pb; max.NaN.bf16x2 pd, pa, pb; max.xorsign.abs.bf16x2 pd, pa, pb;\n"
 			<< "  max.NaN.f32 d, a, b;\n"
 			<< "  max.xorsign.abs.f32 d, a, b;\n  ret;\n}\n";
 		Module parsed;
@@ -1359,6 +1367,19 @@ public:
 				<< error.what() << "\n";
 			return false;
 		}
+		const int expectedBf16x2[] = {0, PTXInstruction::nan,
+			PTXInstruction::xorsign | PTXInstruction::abs, 0, PTXInstruction::nan,
+			PTXInstruction::xorsign | PTXInstruction::abs};
+		unsigned int parsedBf16x2 = 0;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptx = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptx || ptx->type != PTXOperand::bf16x2) continue;
+					if (parsedBf16x2 >= 6 || ptx->modifier != expectedBf16x2[parsedBf16x2]) result = false;
+					++parsedBf16x2;
+				}
+		if (parsedBf16x2 != 6) result = false;
 
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Min;
@@ -1391,6 +1412,20 @@ public:
 		ins.carry = PTXInstruction::None;
 		ins.d.type = PTXOperand::b32;
 		if (ins.valid().empty()) result = false;
+		const PTXOperand::DataType halfTypes[] = {PTXOperand::f16, PTXOperand::f16x2,
+			PTXOperand::bf16, PTXOperand::bf16x2};
+		const int halfModifiers[] = {PTXInstruction::nan, PTXInstruction::ftz | PTXInstruction::nan,
+			PTXInstruction::nan, PTXInstruction::xorsign | PTXInstruction::abs};
+		for (unsigned int i = 0; i < 4; ++i) {
+			ins.type = halfTypes[i]; ins.modifier = halfModifiers[i];
+			const PTXOperand::DataType container = i % 2 ? PTXOperand::b32 : PTXOperand::b16;
+			ins.a = reg("a", container, 0); ins.b = reg("b", container, 1); ins.d = reg("d", container, 2);
+			if (!ins.valid().empty()) result = false;
+		}
+		ins.type = PTXOperand::bf16; ins.modifier = PTXInstruction::ftz;
+		ins.a = reg("a", PTXOperand::b16, 0); ins.b = reg("b", PTXOperand::b16, 1);
+		ins.d = reg("d", PTXOperand::b16, 2);
+		if (ins.valid().empty()) result = false;
 		ins.type = PTXOperand::f16; ins.modifier = 0;
 		ins.a = reg("a", PTXOperand::b16, 0); ins.b = reg("b", PTXOperand::b16, 1);
 		ins.d = reg("d", PTXOperand::b16, 2);
@@ -1413,6 +1448,58 @@ public:
 			else cta->eval_Min(cta->getActiveContext(), ins);
 			if (cta->getRegAsU16(0, 2) != (maximum ? c.maximum : c.minimum)) result = false;
 		}
+		ins.type = PTXOperand::bf16; ins.modifier = 0;
+		struct Bf16Case { int modifier; PTXU16 a, b, minimum, maximum; };
+		const Bf16Case bf16Cases[] = {
+			{0,0x3f80,0x4000,0x3f80,0x4000}, {0,0x7c01,0x3f80,0x3f80,0x7c01},
+			{0,0,0x8000,0x8000,0}, {0,0x8001,1,0x8001,1},
+			{0,0x7fc1,0x3f80,0x3f80,0x3f80}, {0,0x7fc1,0xffc2,0x7fff,0x7fff},
+			{PTXInstruction::nan,0x7fc1,0x3f80,0x7fff,0x7fff},
+			{PTXInstruction::xorsign|PTXInstruction::abs,0xbf80,0x3fc0,0xbf80,0xbfc0},
+			{PTXInstruction::xorsign|PTXInstruction::abs,0xffc1,0x3f80,0xbf80,0xbf80}};
+		ins.a = reg("a", PTXOperand::b16, 0); ins.b = reg("b", PTXOperand::b16, 1);
+		ins.d = reg("d", PTXOperand::b16, 2);
+		for (const Bf16Case& c : bf16Cases) for (int maximum = 0; maximum < 2; ++maximum) {
+			ins.opcode = maximum ? PTXInstruction::Max : PTXInstruction::Min;
+			ins.modifier = c.modifier; cta->setRegAsU16(0, 0, c.a); cta->setRegAsU16(0, 1, c.b);
+			if (maximum) cta->eval_Max(cta->getActiveContext(), ins);
+			else cta->eval_Min(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 2) != (maximum ? c.maximum : c.minimum)) result = false;
+		}
+		struct PackedHalfCase { PTXOperand::DataType type; int modifier; PTXU32 a, b, minimum, maximum; };
+		const PackedHalfCase packedCases[] = {
+			{PTXOperand::f16x2,0,0x40003c00,0x3c004000,0x3c003c00,0x40004000},
+			{PTXOperand::f16x2,0,0x7e003c00,0x3c007e00,0x3c003c00,0x3c003c00},
+			{PTXOperand::f16x2,PTXInstruction::nan,0x7e003c00,0x3c007e00,0x7fff7fff,0x7fff7fff},
+			{PTXOperand::f16x2,0,0x00008000,0x80000000,0x80008000,0x00000000},
+			{PTXOperand::f16x2,0,0x80010001,0x00020002,0x80010001,0x00020002},
+			{PTXOperand::f16x2,PTXInstruction::ftz,0x80010001,0x00020002,0x80000000,0x00000000},
+			{PTXOperand::f16x2,PTXInstruction::xorsign|PTXInstruction::abs,0xbc003c00,0x3e00be00,0xbc00bc00,0xbe00be00},
+			{PTXOperand::bf16x2,0,0x40003f80,0x3f804000,0x3f803f80,0x40004000},
+			{PTXOperand::bf16x2,0,0x7c013f80,0x3f807c01,0x3f803f80,0x7c017c01},
+			{PTXOperand::bf16x2,0,0x7fc13f80,0x3f807fc1,0x3f803f80,0x3f803f80},
+			{PTXOperand::bf16x2,PTXInstruction::nan,0x7fc13f80,0x3f807fc1,0x7fff7fff,0x7fff7fff},
+			{PTXOperand::bf16x2,0,0x80010000,0x00010001,0x80010000,0x00010001},
+			{PTXOperand::bf16x2,PTXInstruction::xorsign|PTXInstruction::abs,0xbf803f80,0x3fc0bfc0,0xbf80bf80,0xbfc0bfc0}};
+		ins.a = reg("pa", PTXOperand::b32, 0); ins.b = reg("pb", PTXOperand::b32, 1);
+		ins.d = reg("pd", PTXOperand::b32, 2);
+		for (const PackedHalfCase& c : packedCases) for (int maximum = 0; maximum < 2; ++maximum) {
+			ins.type = c.type; ins.opcode = maximum ? PTXInstruction::Max : PTXInstruction::Min;
+			ins.modifier = c.modifier; cta->setRegAsU32(0, 0, c.a); cta->setRegAsU32(0, 1, c.b);
+			if (maximum) cta->eval_Max(cta->getActiveContext(), ins);
+			else cta->eval_Min(cta->getActiveContext(), ins);
+			if (cta->getRegAsU32(0, 2) != (maximum ? c.maximum : c.minimum)) result = false;
+		}
+		ins.type = PTXOperand::f16x2; ins.opcode = PTXInstruction::Min; ins.modifier = 0;
+		ins.d = reg("pd", PTXOperand::b32, 0); cta->setRegAsU32(0, 0, 0x40003c00); cta->setRegAsU32(0, 1, 0x3c004000);
+		cta->eval_Min(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 0) != 0x3c003c00) result = false;
+		ins.d = reg("pd", PTXOperand::b32, 2); ins.opcode = PTXInstruction::Max;
+		ins.pg.condition = PTXOperand::Pred; ins.pg.reg = 3; cta->setRegAsPredicate(0, 3, false);
+		cta->setRegAsU32(0, 2, 0xa5a5a5a5); cta->eval_Max(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 2) != 0xa5a5a5a5) result = false;
+		ins.opcode = PTXInstruction::Min; ins.modifier = 0; ins.carry = PTXInstruction::None;
+		ins.pg.condition = PTXOperand::PT; ins.pg.reg = 0; ins.d = reg("d", PTXOperand::b16, 2);
 		// u16
 		//
 		if (result) {

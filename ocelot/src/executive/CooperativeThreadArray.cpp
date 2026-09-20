@@ -490,39 +490,67 @@ static ir::PTXF32 f16ToF32(ir::PTXU16 bits) {
 	return static_cast<ir::PTXF32>(half);
 }
 
-// PTX ISA 9.3, 5.2.3 defines f16; CUDA Math API defines CUDART_NAN_FP16.
-static const ir::PTXU16 f16SignMask = 0x8000u, f16MagnitudeMask = 0x7fffu;
-static const ir::PTXU16 f16ExponentMask = 0x7c00u, f16MantissaMask = 0x03ffu;
-static const ir::PTXU16 f16CanonicalNan = 0x7fffu;
-
-static bool isNanF16(ir::PTXU16 value) {
-	return (value & f16ExponentMask) == f16ExponentMask && (value & f16MantissaMask) != 0;
+static ir::PTXF32 bf16ToF32(ir::PTXU16 bits) {
+	return hydrazine::bit_cast<ir::PTXF32>(static_cast<ir::PTXU32>(bits) << 16);
 }
 
-static ir::PTXU16 minMaxF16(int modifier, ir::PTXU16 a, ir::PTXU16 b,
-	bool maximum) {
-	a = ftzF16(modifier, a);
-	b = ftzF16(modifier, b);
+// PTX half formats use sign/magnitude masks; CUDA defines 0x7fff as canonical NaN.
+static const ir::PTXU16 halfSignMask = 0x8000u;
+static const ir::PTXU16 halfMagnitudeMask = 0x7fffu;
+static const ir::PTXU16 halfCanonicalNan = 0x7fffu;
+static const ir::PTXU16 f16ExponentMask = 0x7c00u;
+static const ir::PTXU16 f16MantissaMask = 0x03ffu;
+static const ir::PTXU16 bf16ExponentMask = 0x7f80u;
+static const ir::PTXU16 bf16MantissaMask = 0x007fu;
+
+static bool isNanHalf(ir::PTXU16 value, ir::PTXOperand::DataType type) {
+	const bool bfloat = type == ir::PTXOperand::bf16 || type == ir::PTXOperand::bf16x2;
+	const ir::PTXU16 exponentMask = bfloat ? bf16ExponentMask : f16ExponentMask;
+	const ir::PTXU16 mantissaMask = bfloat ? bf16MantissaMask : f16MantissaMask;
+	return (value & exponentMask) == exponentMask && (value & mantissaMask) != 0;
+}
+
+static ir::PTXU16 minMaxHalf(ir::PTXOperand::DataType type, int modifier,
+	ir::PTXU16 a, ir::PTXU16 b, bool maximum) {
+	const bool isF16 = type == ir::PTXOperand::f16 || type == ir::PTXOperand::f16x2;
+	if (isF16) {
+		a = ftzF16(modifier, a);
+		b = ftzF16(modifier, b);
+	}
 	ir::PTXU16 xorSign = 0;
 	if (modifier & ir::PTXInstruction::xorsign) {
-		xorSign = (a ^ b) & f16SignMask;
-		a &= f16MagnitudeMask;
-		b &= f16MagnitudeMask;
+		xorSign = (a ^ b) & halfSignMask;
+		a &= halfMagnitudeMask;
+		b &= halfMagnitudeMask;
 	}
-	const bool aNan = isNanF16(a);
-	const bool bNan = isNanF16(b);
-	const bool bothZero = ((a | b) & f16MagnitudeMask) == 0;
-	if (aNan && bNan) return f16CanonicalNan;
-	if ((modifier & ir::PTXInstruction::nan) && (aNan || bNan)) return f16CanonicalNan;
+	const bool aNan = isNanHalf(a, type);
+	const bool bNan = isNanHalf(b, type);
+	const bool bothZero = ((a | b) & halfMagnitudeMask) == 0;
+	if (aNan && bNan) {
+		return halfCanonicalNan;
+	}
+	if ((modifier & ir::PTXInstruction::nan) && (aNan || bNan)) {
+		return halfCanonicalNan;
+	}
 	ir::PTXU16 d;
-	if (aNan) d = b;
-	else if (bNan) d = a;
+	if (aNan) {
+		d = b;
+	}
+	else if (bNan) {
+		d = a;
+	}
 	else if (bothZero) {
 		d = maximum ? (a & b) : (a | b);
 	}
-	else if (maximum) d = f16ToF32(a) > f16ToF32(b) ? a : b;
-	else d = f16ToF32(a) < f16ToF32(b) ? a : b;
-	return (modifier & ir::PTXInstruction::xorsign) ? (d & f16MagnitudeMask) | xorSign : d;
+	else {
+		const ir::PTXF32 aValue = isF16 ? f16ToF32(a) : bf16ToF32(a);
+		const ir::PTXF32 bValue = isF16 ? f16ToF32(b) : bf16ToF32(b);
+		d = maximum ? (aValue > bValue ? a : b) : (aValue < bValue ? a : b);
+	}
+	if (modifier & ir::PTXInstruction::xorsign) {
+		return (d & halfMagnitudeMask) | xorSign;
+	}
+	return d;
 }
 
 static ir::PTXF32 tf32FromF32(ir::PTXF32 value) {
@@ -553,11 +581,6 @@ static ir::PTXU32 tf32FromF32Rna(ir::PTXF32 value) {
 
 template< typename Source >
 static ir::PTXU16 toF16(Source value, int modifier);
-
-static ir::PTXF32 bf16ToF32(ir::PTXU16 bits) {
-	return hydrazine::bit_cast<ir::PTXF32>(
-		static_cast<ir::PTXU32>(bits) << 16);
-}
 
 static ir::PTXU16 mmaHalfBits(executive::CooperativeThreadArray& cta,
 	int threadID, const ir::PTXOperand& operand, unsigned int half)
@@ -6007,14 +6030,30 @@ void executive::CooperativeThreadArray::eval_Max(CTAContext &context,
 			setRegAsF64(threadID, instr.d.reg, d);
 		}
 	}
-	else if (instr.type == ir::PTXOperand::f16) {
+	else if (instr.type == ir::PTXOperand::f16 || instr.type == ir::PTXOperand::bf16) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXU16 d = minMaxF16(instr.modifier,
+			ir::PTXU16 d = minMaxHalf(instr.type, instr.modifier,
 				operandAsU16(threadID, instr.a), operandAsU16(threadID, instr.b), true);
 
 			setRegAsB16(threadID, instr.d.reg, d);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f16x2 || instr.type == ir::PTXOperand::bf16x2) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+			const ir::PTXU16 aLow = static_cast<ir::PTXU16>(a);
+			const ir::PTXU16 aHigh = static_cast<ir::PTXU16>(a >> 16);
+			const ir::PTXU16 bLow = static_cast<ir::PTXU16>(b);
+			const ir::PTXU16 bHigh = static_cast<ir::PTXU16>(b >> 16);
+			const ir::PTXU32 low = static_cast<ir::PTXU32>(
+				minMaxHalf(instr.type, instr.modifier, aLow, bLow, true));
+			const ir::PTXU32 high = static_cast<ir::PTXU32>(
+				minMaxHalf(instr.type, instr.modifier, aHigh, bHigh, true));
+			setRegAsU32(threadID, instr.d.reg, low | (high << 16));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::s16) {
@@ -6088,11 +6127,27 @@ void executive::CooperativeThreadArray::eval_Max(CTAContext &context,
 void executive::CooperativeThreadArray::eval_Min(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
-	if (instr.type == ir::PTXOperand::f16) {
+	if (instr.type == ir::PTXOperand::f16 || instr.type == ir::PTXOperand::bf16) {
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
-			setRegAsB16(threadID, instr.d.reg, minMaxF16(instr.modifier,
+			setRegAsB16(threadID, instr.d.reg, minMaxHalf(instr.type, instr.modifier,
 				operandAsU16(threadID, instr.a), operandAsU16(threadID, instr.b), false));
+		}
+	}
+	else if (instr.type == ir::PTXOperand::f16x2 || instr.type == ir::PTXOperand::bf16x2) {
+		for (int threadID = 0; threadID < threadCount; threadID++) {
+			if (!context.predicated(threadID, instr)) continue;
+			const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			const ir::PTXU32 b = operandAsU32(threadID, instr.b);
+			const ir::PTXU16 aLow = static_cast<ir::PTXU16>(a);
+			const ir::PTXU16 aHigh = static_cast<ir::PTXU16>(a >> 16);
+			const ir::PTXU16 bLow = static_cast<ir::PTXU16>(b);
+			const ir::PTXU16 bHigh = static_cast<ir::PTXU16>(b >> 16);
+			const ir::PTXU32 low = static_cast<ir::PTXU32>(
+				minMaxHalf(instr.type, instr.modifier, aLow, bLow, false));
+			const ir::PTXU32 high = static_cast<ir::PTXU32>(
+				minMaxHalf(instr.type, instr.modifier, aHigh, bHigh, false));
+			setRegAsU32(threadID, instr.d.reg, low | (high << 16));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f32) {

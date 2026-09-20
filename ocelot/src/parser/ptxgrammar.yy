@@ -957,9 +957,15 @@ optionalXorsignAbs : TOKEN_XORSIGN TOKEN_ABS_MODIFIER
 }
 | /* empty string */;
 
+minMaxDataTypeId : dataTypeId | TOKEN_BF16X2;
+
+minMaxDataType : minMaxDataTypeId
+{
+	state.dataType( $<value>1 );
+};
+
 ftzInstruction3 : ftzInstruction3Opcode optionalFtz optionalNanModifier
-	optionalXorsignAbs dataType operand ','
-	operand ',' operand ';'
+	optionalXorsignAbs minMaxDataType operand ',' operand ',' operand ';'
 {
 	state.instruction( $<text>1, $<value>5 );
 };
