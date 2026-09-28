@@ -2343,12 +2343,13 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Tanh: {
-			if( type != PTXOperand::f32 || modifier != approx ) {
-				return "tanh instruction requires exactly .approx.f32";
+			if( !(type == PTXOperand::f32 || type == PTXOperand::f16
+				|| type == PTXOperand::f16x2) || modifier != approx ) {
+				return "tanh requires .approx with f32, f16, or f16x2";
 			}
 			if( !PTXOperand::valid(type, a.type)
 				|| !PTXOperand::valid(type, d.type) ) {
-				return "tanh operands must have compatible f32 types";
+				return "tanh operands must have compatible types";
 			}
 			break;
 		}

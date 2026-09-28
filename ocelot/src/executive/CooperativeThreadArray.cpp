@@ -9684,12 +9684,26 @@ void executive::CooperativeThreadArray::eval_Sust(CTAContext &context,
 void executive::CooperativeThreadArray::eval_Tanh(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
+	auto tanhF16 = [](ir::PTXU16 a) {
+		return toF16(std::tanh(f16ToF32(a)), ir::PTXInstruction::rn);
+	};
 	for (int threadID = 0; threadID < threadCount; ++threadID) {
 		if (!context.predicated(threadID, instr)) continue;
-		const ir::PTXF32 a = operandAsF32(threadID, instr.a);
-		const ir::PTXF32 d = std::fpclassify(a) == FP_SUBNORMAL
-			? a : std::tanh(a);
-		setRegAsF32(threadID, instr.d.reg, d);
+		if (instr.type == ir::PTXOperand::f16) {
+			setRegAsB16(threadID, instr.d.reg,
+				tanhF16(operandAsU16(threadID, instr.a)));
+		}
+		else if (instr.type == ir::PTXOperand::f16x2) {
+			const ir::PTXU32 a = operandAsU32(threadID, instr.a);
+			setRegAsU32(threadID, instr.d.reg, tanhF16(a)
+				| (static_cast<ir::PTXU32>(tanhF16(a >> 16)) << 16));
+		}
+		else {
+			const ir::PTXF32 a = operandAsF32(threadID, instr.a);
+			const ir::PTXF32 d = std::fpclassify(a) == FP_SUBNORMAL
+				? a : std::tanh(a);
+			setRegAsF32(threadID, instr.d.reg, d);
+		}
 	}
 }
 

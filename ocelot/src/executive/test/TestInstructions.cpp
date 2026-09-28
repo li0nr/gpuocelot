@@ -3633,7 +3633,10 @@ public:
 		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
 			<< ".visible .entry test_tanh() {\n"
 			<< "  .reg .f32 d, a;\n"
-			<< "  tanh.approx.f32 d, a;\n  ret;\n}\n";
+			<< "  .reg .b16 hd, ha; .reg .b32 pd, pa;\n"
+			<< "  tanh.approx.f32 d, a;\n"
+			<< "  tanh.approx.f16 hd, ha; tanh.approx.f16x2 pd, pa;\n"
+			<< "  ret;\n}\n";
 		Module parsed;
 		try { parsed.load(ptx); }
 		catch (const hydrazine::Exception& error) {
@@ -3661,8 +3664,44 @@ public:
 		cta->setRegAsF32(0, 1, subnormal);
 		cta->setRegAsF32(1, 1, -subnormal);
 		cta->eval_Tanh(cta->getActiveContext(), ins);
-		return cta->getRegAsF32(0, 0) == subnormal
-			&& cta->getRegAsF32(1, 0) == -subnormal;
+		if (cta->getRegAsF32(0, 0) != subnormal
+			|| cta->getRegAsF32(1, 0) != -subnormal) return false;
+
+		ins.type = PTXOperand::f16;
+		ins.d = reg("hd", PTXOperand::b16, 0);
+		ins.a = reg("ha", PTXOperand::b16, 1);
+		const PTXU16 inputs[] = {0, 0x8000, 0x3c00, 0xbc00,
+			0x7c00, 0xfc00, 1, 0x8001};
+		const PTXU16 expected[] = {0, 0x8000, 0x3a18, 0xba18,
+			0x3c00, 0xbc00, 1, 0x8001};
+		for (unsigned int i = 0; i < 8; ++i) {
+			cta->setRegAsU16(0, 1, inputs[i]);
+			cta->eval_Tanh(cta->getActiveContext(), ins);
+			if (cta->getRegAsU16(0, 0) != expected[i]) return false;
+		}
+		cta->setRegAsU16(0, 1, 0x7e00);
+		cta->eval_Tanh(cta->getActiveContext(), ins);
+		const PTXU16 nan = cta->getRegAsU16(0, 0);
+		if ((nan & 0x7c00) != 0x7c00 || !(nan & 0x03ff)) return false;
+
+		ins.type = PTXOperand::f16x2;
+		ins.d = reg("pd", PTXOperand::b32, 0);
+		ins.a = reg("pa", PTXOperand::b32, 1);
+		cta->setRegAsU32(0, 1, 0x3c00bc00);
+		cta->eval_Tanh(cta->getActiveContext(), ins);
+		if (cta->getRegAsU32(0, 0) != 0x3a18ba18) return false;
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		if (ins.valid().empty()) return false;
+
+		ins.modifier = PTXInstruction::approx;
+		ins.type = PTXOperand::bf16;
+		ins.d = reg("bd", PTXOperand::b16, 0);
+		ins.a = reg("ba", PTXOperand::b16, 1);
+		if (ins.valid().empty()) return false;
+		ins.type = PTXOperand::bf16x2;
+		ins.d = reg("pd", PTXOperand::b32, 0);
+		ins.a = reg("pa", PTXOperand::b32, 1);
+		return !ins.valid().empty();
 	}
 	
 	bool test_CopySign() {
