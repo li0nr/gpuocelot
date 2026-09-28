@@ -1999,15 +1999,16 @@ void executive::CooperativeThreadArray::eval_Add(CTAContext &context,
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f16) {
+		const int effectiveModifier = instr.modifier | ir::PTXInstruction::rn;
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 a = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.a)));
-			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 b = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.b)));
-			ir::PTXU16 d = toF16(a + b, instr.modifier);
-			setRegAsB16(threadID, instr.d.reg, ftzF16(instr.modifier, d));
+			ir::PTXU16 d = toF16(roundedAdd(a, b, effectiveModifier), effectiveModifier);
+			setRegAsB16(threadID, instr.d.reg, ftzF16(effectiveModifier, d));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f32) {

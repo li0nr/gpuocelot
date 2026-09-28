@@ -403,6 +403,31 @@ public:
 				}
 			}
 		}
+		if (result) {
+			ins.modifier = 0; // PTX defaults to round-to-nearest-even.
+			cta->setRegAsU16(0, 0, 0x3c00); // 1.0
+			cta->setRegAsU16(0, 1, 0x1000); // half an f16 ULP at 1.0
+			const int previous = hydrazine::fegetround();
+			hydrazine::fesetround(FE_UPWARD);
+			cta->eval_Add(cta->getActiveContext(), ins);
+			const bool roundedNearest = cta->getRegAsU16(0, 2) == 0x3c00;
+			const bool restored = hydrazine::fegetround() == FE_UPWARD;
+			hydrazine::fesetround(previous);
+			if (!roundedNearest || !restored) {
+				status << "add.f16 default rounding failed\n";
+				result = false;
+			}
+		}
+		ins.modifier = PTXInstruction::rz;
+		if (ins.valid().empty()) {
+			status << "add.rz.f16 accepted\n";
+			result = false;
+		}
+		ins.modifier = PTXInstruction::ftz | PTXInstruction::sat;
+		if (!ins.valid().empty()) {
+			status << "add.ftz.sat.f16 rejected\n";
+			result = false;
+		}
 
 		// f16x2
 		//
@@ -413,6 +438,11 @@ public:
 			ins.b = reg("r2", PTXOperand::b32, 1);
 			ins.d = reg("r3", PTXOperand::b32, 2);
 			if (!ins.valid().empty()) result = false;
+			ins.modifier = PTXInstruction::rp;
+			if (ins.valid().empty()) {
+				status << "add.rp.f16x2 accepted\n";
+				result = false;
+			}
 			cta->reset();
 			auto packedAdd = [&](int modifier, PTXU32 a, PTXU32 b,
 				PTXU32 expected, bool alias) {

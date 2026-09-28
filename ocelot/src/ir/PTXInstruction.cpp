@@ -555,6 +555,10 @@ std::string ir::PTXInstruction::valid() const {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
 			}
+			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
+				&& (modifier & ~(rn | ftz | sat))) {
+				return "add.f16 only supports .rn, .ftz, and .sat";
+			}
 			if( carry == CC ) {
 				if( ( modifier & sat ) ) {
 					return "saturate not supported with carry out";
