@@ -7933,8 +7933,43 @@ public:
 		cta->setRegAsU32(0, 1, shared32);
 		cta->eval_Isspacep(cta->getActiveContext(), ins);
 		bool predicatedOff = !cta->getRegAsPredicate(0, 0);
+
+		*reinterpret_cast<PTXU32*>(local64) = 0x12345678;
+		cta->functionCallStack.pushFrame(0, kernel->registerCount(), 16, 64,
+			0, 0, 0);
+		PTXInstruction load;
+		load.opcode = PTXInstruction::Ld;
+		load.addressSpace = PTXInstruction::Generic;
+		load.type = PTXOperand::u32;
+		load.d = reg("d", PTXOperand::u32, 3);
+		load.a = reg("a", PTXOperand::u64, 1);
+		load.a.addressMode = PTXOperand::Indirect;
+		load.pg.condition = PTXOperand::Pred;
+		load.pg.reg = 4;
+		for (int thread = 0; thread < threadCount; ++thread)
+			cta->setRegAsPredicate(thread, 4, thread == 0);
+		cta->setRegAsU64(0, 1, local64);
+		cta->eval_Ld(cta->getActiveContext(), load);
+		bool callerLocal = cta->getRegAsU32(0, 3) == 0x12345678;
+		ins.a.type = PTXOperand::u64;
+		ins.pg.condition = PTXOperand::PT;
+		ins.addressSpace = PTXInstruction::Local;
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		callerLocal &= cta->getRegAsPredicate(0, 0);
+		ins.addressSpace = PTXInstruction::Global;
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		callerLocal &= !cta->getRegAsPredicate(0, 0);
+		ins.a.type = PTXOperand::u32;
+		cta->setRegAsU32(0, 1, static_cast<PTXU32>(local64));
+		ins.addressSpace = PTXInstruction::Local;
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		callerLocal &= cta->getRegAsPredicate(0, 0);
+		ins.addressSpace = PTXInstruction::Global;
+		cta->eval_Isspacep(cta->getActiveContext(), ins);
+		callerLocal &= !cta->getRegAsPredicate(0, 0);
 		cta->functionCallStack.popFrame();
-		return predicatedOff;
+		cta->functionCallStack.popFrame();
+		return predicatedOff && callerLocal;
 	}
 
 	bool test_IsspacepConst() {

@@ -5101,17 +5101,9 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				if (!context.predicated(tid, instr)) {
 					continue;
 				}
-				ir::PTXU32 ptr = operandAsU32(tid, instr.a);
-				ir::PTXU32 localMemPtr;
-				ir::PTXU32 localMemSize = functionCallStack.localMemorySize();
-				hydrazine::bit_cast(localMemPtr,
-					functionCallStack.localMemoryPointer(tid));
-				if (addressInRange(ptr, localMemPtr, localMemSize)) {
-					setRegAsPredicate(tid, instr.d.reg, 1);
-				}
-				else {
-					setRegAsPredicate(tid, instr.d.reg, 0);
-				}
+				const ir::PTXU32 ptr = operandAsU32(tid, instr.a);
+				setRegAsPredicate(tid, instr.d.reg,
+					functionCallStack.isLocalMemoryAddress(ptr, tid, 32));
 			}
 		}
 		else {
@@ -5119,17 +5111,9 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 				if (!context.predicated(tid, instr)) {
 					continue;
 				}
-				ir::PTXU64 ptr = operandAsU64(tid, instr.a);
-				ir::PTXU64 localMemPtr;
-				ir::PTXU64 localMemSize = functionCallStack.localMemorySize();
-				hydrazine::bit_cast(localMemPtr,
-					functionCallStack.localMemoryPointer(tid));
-				if (addressInRange(ptr, localMemPtr, localMemSize)) {
-					setRegAsPredicate(tid, instr.d.reg, 1);
-				}
-				else {
-					setRegAsPredicate(tid, instr.d.reg, 0);
-				}
+				const ir::PTXU64 ptr = operandAsU64(tid, instr.a);
+				setRegAsPredicate(tid, instr.d.reg,
+					functionCallStack.isLocalMemoryAddress(ptr, tid, 64));
 			}
 		}
 	}
@@ -5182,19 +5166,16 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 					continue;
 				}
 				ir::PTXU32 ptr = operandAsU32(tid, instr.a);
-				ir::PTXU32 localMemPtr;
-				ir::PTXU32 localMemSize = functionCallStack.localMemorySize();
 				ir::PTXU32 sharedMemPtr;
 				ir::PTXU32 sharedMemSize = functionCallStack.sharedMemorySize();
 				ir::PTXU32 constMemPtr;
 				const ir::PTXU32 constMemSize = kernel->constMemorySize();
-				hydrazine::bit_cast(localMemPtr,
-					functionCallStack.localMemoryPointer(tid));
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
 				hydrazine::bit_cast(constMemPtr, kernel->ConstMemory);
 				const bool inShared = addressInRange(ptr, sharedMemPtr, sharedMemSize);
-				const bool inLocal = addressInRange(ptr, localMemPtr, localMemSize);
+				const bool inLocal =
+					functionCallStack.isLocalMemoryAddress(ptr, tid, 32);
 				const bool inConst = addressInRange(ptr, constMemPtr, constMemSize);
 				setRegAsPredicate(tid, instr.d.reg, !(inShared || inLocal || inConst));
 			}
@@ -5205,19 +5186,16 @@ void executive::CooperativeThreadArray::eval_Isspacep(CTAContext &context,
 					continue;
 				}
 				ir::PTXU64 ptr = operandAsU64(tid, instr.a);
-				ir::PTXU64 localMemPtr;
-				ir::PTXU64 localMemSize = functionCallStack.localMemorySize();
 				ir::PTXU64 sharedMemPtr;
 				ir::PTXU64 sharedMemSize = functionCallStack.sharedMemorySize();
 				ir::PTXU64 constMemPtr;
 				const ir::PTXU64 constMemSize = kernel->constMemorySize();
-				hydrazine::bit_cast(localMemPtr,
-					functionCallStack.localMemoryPointer(tid));
 				hydrazine::bit_cast(sharedMemPtr,
 					functionCallStack.sharedMemoryPointer());
 				hydrazine::bit_cast(constMemPtr, kernel->ConstMemory);
 				const bool inShared = addressInRange(ptr, sharedMemPtr, sharedMemSize);
-				const bool inLocal = addressInRange(ptr, localMemPtr, localMemSize);
+				const bool inLocal =
+					functionCallStack.isLocalMemoryAddress(ptr, tid, 64);
 				const bool inConst = addressInRange(ptr, constMemPtr, constMemSize);
 				setRegAsPredicate(tid, instr.d.reg, !(inShared || inLocal || inConst));
 			}
