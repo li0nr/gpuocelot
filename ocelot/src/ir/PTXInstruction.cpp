@@ -1203,6 +1203,14 @@ std::string ir::PTXInstruction::valid() const {
 			if (type == PTXOperand::f64 && (modifier & (ftz | sat))) {
 				return "ftz and sat modifiers are invalid for fma.f64";
 			}
+			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
+				&& rounding != rn) {
+				return "fma.f16 requires .rn";
+			}
+			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
+				&& (modifier & sat) && (modifier & relu)) {
+				return "fma.f16 sat and relu are mutually exclusive";
+			}
 			if( !PTXOperand::valid( type, a.type ) ) {
 				return "operand A type " + PTXOperand::toString( a.type )
 					+ " cannot be assigned to " + PTXOperand::toString( type );
@@ -1642,6 +1650,10 @@ std::string ir::PTXInstruction::valid() const {
 				|| type == PTXOperand::pred ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
+			}
+			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
+				&& (modifier & ~(rn | ftz | sat))) {
+				return "mul.f16 only supports .rn, .ftz, and .sat";
 			}
 			if( !PTXOperand::valid( type, a.type )  ) {
 				return "operand A type " + PTXOperand::toString( a.type ) 
@@ -2297,6 +2309,10 @@ std::string ir::PTXInstruction::valid() const {
 				&& type != PTXOperand::pred ) ) {
 				return "invalid instruction type " 
 					+ PTXOperand::toString( type );
+			}
+			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
+				&& (modifier & ~(rn | ftz | sat))) {
+				return "sub.f16 only supports .rn, .ftz, and .sat";
 			}
 			if( carry == CC ) {
 				if( ( modifier & sat ) ) {

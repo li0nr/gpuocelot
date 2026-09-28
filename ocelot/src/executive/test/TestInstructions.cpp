@@ -791,6 +791,35 @@ public:
 				}
 			}
 		}
+		if (result) {
+			ins.type = PTXOperand::f16;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.b = reg("r2", PTXOperand::b16, 1);
+			ins.d = reg("r3", PTXOperand::b16, 2);
+			ins.modifier = 0; // PTX defaults to round-to-nearest-even.
+			cta->setRegAsU16(0, 0, 0x3c00); // 1.0
+			cta->setRegAsU16(0, 1, 0x9000); // -(half an f16 ULP at 1.0)
+			const int previous = hydrazine::fegetround();
+			hydrazine::fesetround(FE_UPWARD);
+			cta->eval_Sub(cta->getActiveContext(), ins);
+			const bool roundedNearest = cta->getRegAsU16(0, 2) == 0x3c00;
+			const bool restored = hydrazine::fegetround() == FE_UPWARD;
+			hydrazine::fesetround(previous);
+			if (!roundedNearest || !restored) {
+				status << "sub.f16 default rounding failed\n";
+				result = false;
+			}
+		}
+		ins.modifier = PTXInstruction::rz;
+		if (ins.valid().empty()) {
+			status << "sub.rz.f16 accepted\n";
+			result = false;
+		}
+		ins.modifier = PTXInstruction::ftz | PTXInstruction::sat;
+		if (!ins.valid().empty()) {
+			status << "sub.ftz.sat.f16 rejected\n";
+			result = false;
+		}
 
 		// f16x2
 		//
@@ -801,6 +830,11 @@ public:
 			ins.b = reg("r2", PTXOperand::b32, 1);
 			ins.d = reg("r3", PTXOperand::b32, 2);
 			if (!ins.valid().empty()) result = false;
+			ins.modifier = PTXInstruction::rp;
+			if (ins.valid().empty()) {
+				status << "sub.rp.f16x2 accepted\n";
+				result = false;
+			}
 			cta->reset();
 			auto packedSub = [&](int modifier, PTXU32 a, PTXU32 b,
 				PTXU32 expected, bool alias) {
@@ -3037,6 +3071,35 @@ public:
 				}
 			}
 		}
+		if (result) {
+			ins.type = PTXOperand::f16;
+			ins.a = reg("r1", PTXOperand::b16, 0);
+			ins.b = reg("r2", PTXOperand::b16, 1);
+			ins.d = reg("r4", PTXOperand::b16, 3);
+			ins.modifier = 0; // PTX defaults to round-to-nearest-even.
+			cta->setRegAsU16(0, 0, 0x3c01); // 1 + 2^-10
+			cta->setRegAsU16(0, 1, 0x3c01); // 1 + 2^-10
+			const int previous = hydrazine::fegetround();
+			hydrazine::fesetround(FE_UPWARD);
+			cta->eval_Mul(cta->getActiveContext(), ins);
+			const bool roundedNearest = cta->getRegAsU16(0, 3) == 0x3c02;
+			const bool restored = hydrazine::fegetround() == FE_UPWARD;
+			hydrazine::fesetround(previous);
+			if (!roundedNearest || !restored) {
+				status << "mul.f16 default rounding failed\n";
+				result = false;
+			}
+		}
+		ins.modifier = PTXInstruction::rz;
+		if (ins.valid().empty()) {
+			status << "mul.rz.f16 accepted\n";
+			result = false;
+		}
+		ins.modifier = PTXInstruction::ftz | PTXInstruction::sat;
+		if (!ins.valid().empty()) {
+			status << "mul.ftz.sat.f16 rejected\n";
+			result = false;
+		}
 
 		// f16x2
 		//
@@ -3047,6 +3110,11 @@ public:
 			ins.b = reg("r2", PTXOperand::b32, 1);
 			ins.d = reg("r3", PTXOperand::b32, 2);
 			if (!ins.valid().empty()) result = false;
+			ins.modifier = PTXInstruction::rp;
+			if (ins.valid().empty()) {
+				status << "mul.rp.f16x2 accepted\n";
+				result = false;
+			}
 			cta->reset();
 			auto packedMul = [&](int modifier, PTXU32 a, PTXU32 b,
 				PTXU32 expected, bool alias) {
@@ -4146,6 +4214,55 @@ public:
 			}
 		}
 
+		auto scalarFma = [&](int modifier, PTXU16 a, PTXU16 b, PTXU16 c,
+			PTXU16 expected) {
+			ins.modifier = modifier;
+			cta->setRegAsU16(0, 0, a); cta->setRegAsU16(0, 1, b);
+			cta->setRegAsU16(0, 3, c); cta->setRegAsU16(0, 2, 0xbeef);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			return cta->getRegAsU16(0, 2) == expected;
+		};
+		if (!scalarFma(PTXInstruction::rn, 0x3bfe, 0x9001, 0x3c01, 0x3c01)
+			|| !scalarFma(PTXInstruction::rn, 0x0001, 0x3c00, 0, 0x0001)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x0001, 0x3c00, 0, 0x0000)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x0400, 0x3800, 0, 0x0000)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::ftz,
+				0x8400, 0x3800, 0, 0x8000)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::sat,
+				0x4000, 0x4000, 0, 0x3c00)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::relu,
+				0xbc00, 0x3c00, 0, 0x0000)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::relu,
+				0x7e00, 0x3c00, 0, 0x7fff)) {
+			status << "fma.f16 scalar case failed\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn;
+		if (!ins.valid().empty()) {
+			status << "fma.rn.f16 rejected\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rz;
+		if (ins.valid().empty()) {
+			status << "fma.rz.f16 accepted\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn | PTXInstruction::sat
+			| PTXInstruction::relu;
+		if (ins.valid().empty()) {
+			status << "fma.rn.sat.relu.f16 accepted\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn | PTXInstruction::ftz
+			| PTXInstruction::relu;
+		if (!ins.valid().empty()) {
+			status << "fma.rn.ftz.relu.f16 rejected\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn;
+
 		ins.type = PTXOperand::f16x2;
 		ins.a = reg("a", PTXOperand::b32, 0);
 		ins.b = reg("b", PTXOperand::b32, 1);
@@ -4155,6 +4272,12 @@ public:
 			status << "fma.rn.f16x2 rejected\n";
 			return false;
 		}
+		ins.modifier = PTXInstruction::rm;
+		if (ins.valid().empty()) {
+			status << "fma.rm.f16x2 accepted\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn;
 		cta->reset();
 		auto packedFma = [&](int modifier, PTXU32 a, PTXU32 b, PTXU32 c,
 			PTXU32 expected, bool alias) {

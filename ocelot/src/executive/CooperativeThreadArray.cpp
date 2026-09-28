@@ -4881,7 +4881,8 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 			ir::PTXF32 c = f16ToF32(ftzF16(instr.modifier,
 				operandAsU16(tid, instr.c)));
 			setRegAsB16(tid, instr.d.reg,
-				toF16(std::fma(a, b, c), instr.modifier));
+				ftzF16(instr.modifier, toF16(roundedFma<double>(
+					a, b, c, instr.modifier), instr.modifier)));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::bf16) {
@@ -6659,15 +6660,16 @@ void executive::CooperativeThreadArray::eval_Mul(CTAContext &context, const ir::
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f16) {
+		const int effectiveModifier = instr.modifier | ir::PTXInstruction::rn;
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 a = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.a)));
-			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 b = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.b)));
-			ir::PTXU16 d = toF16(a * b, instr.modifier);
-			setRegAsB16(threadID, instr.d.reg, ftzF16(instr.modifier, d));
+			ir::PTXU16 d = toF16(roundedMul(a, b, effectiveModifier), effectiveModifier);
+			setRegAsB16(threadID, instr.d.reg, ftzF16(effectiveModifier, d));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f32) {
@@ -9435,15 +9437,16 @@ void executive::CooperativeThreadArray::eval_Sub(CTAContext &context,
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f16) {
+		const int effectiveModifier = instr.modifier | ir::PTXInstruction::rn;
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
-			ir::PTXF32 a = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 a = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.a)));
-			ir::PTXF32 b = f16ToF32(ftzF16(instr.modifier,
+			ir::PTXF32 b = f16ToF32(ftzF16(effectiveModifier,
 				operandAsU16(threadID, instr.b)));
-			ir::PTXU16 d = toF16(a - b, instr.modifier);
-			setRegAsB16(threadID, instr.d.reg, ftzF16(instr.modifier, d));
+			ir::PTXU16 d = toF16(roundedSub(a, b, effectiveModifier), effectiveModifier);
+			setRegAsB16(threadID, instr.d.reg, ftzF16(effectiveModifier, d));
 		}
 	}
 	else if (instr.type == ir::PTXOperand::f32) {
