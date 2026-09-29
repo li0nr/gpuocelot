@@ -1609,6 +1609,45 @@ public:
 		return true;
 	}
 
+	// stringToOpcode() had no entries for "prefetch"/"prefetchu" at all,
+	// so both silently fell through to Nop and failed to parse with
+	// "NOP is not a valid instruction" -- unrelated to the shared-action
+	// grammar bug, found while regression-testing it.
+	bool test_PrefetchOpcode() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_prefetch() {\n"
+			<< "  .reg .u64 a;\n"
+			<< "  prefetch.global.L1 [a];\n"
+			<< "  prefetchu.L1 [a];\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse prefetch/prefetchu example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		bool prefetch = false, prefetchu = false;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns) continue;
+					if (ptxIns->opcode == PTXInstruction::Prefetch
+						&& ptxIns->cacheLevel == PTXInstruction::L1
+						&& ptxIns->addressSpace == PTXInstruction::Global) prefetch = true;
+					if (ptxIns->opcode == PTXInstruction::Prefetchu
+						&& ptxIns->cacheLevel == PTXInstruction::L1) prefetchu = true;
+				}
+		if (!prefetch || !prefetchu) {
+			status << "prefetch=" << prefetch << " prefetchu=" << prefetchu << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
 #define argmin(a, b) ((a) > (b) ? (b) : (a))
 #define argmax(a, b) ((b) > (a) ? (b) : (a))
 
@@ -8684,6 +8723,7 @@ public:
 			result = (result && test_SuldSustCacheOperator());
 			result = (result && test_StCacheOperator());
 			result = (result && test_GrammarSharedActionFix());
+			result = (result && test_PrefetchOpcode());
 
 			// arithmetic instructions
 			result = (result && test_Abs());
