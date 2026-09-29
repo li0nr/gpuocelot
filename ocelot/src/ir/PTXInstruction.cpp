@@ -499,6 +499,7 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	addressSpace = AddressSpace_Invalid;
 	tailCall = false;
 	cacheOperation = Ca;
+	booleanOperator = BoolAnd;
 }
 
 ir::PTXInstruction::~PTXInstruction() {

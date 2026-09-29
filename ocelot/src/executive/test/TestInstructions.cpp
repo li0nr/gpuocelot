@@ -1554,6 +1554,61 @@ public:
 		return true;
 	}
 
+	// Bison only attaches a rule's trailing { action } to its LAST
+	// alternative, not all of them (rule : A | B | C { action } only runs
+	// action for C). Several grammar productions shared one action across
+	// multiple alternatives, so only the last-listed modifier actually got
+	// recorded; every other modifier silently kept the instruction's
+	// previous/default field value. This checks the first-listed
+	// (previously-broken) alternative of each affected production parses
+	// with the correct field, not just the last one.
+	bool test_GrammarSharedActionFix() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_shared_action() {\n"
+			<< "  .reg .f32 d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  .reg .pred p, q;\n"
+			<< "  ld.cg.f32 d, [a];\n"
+			<< "  lop3.and.b32 d|p, d, d, d, 0x3f, q;\n"
+			<< "  lop3.or.b32 d|p, d, d, d, 0x3f, q;\n"
+			<< "  bar.arrive 0;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse shared-action regression example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		bool ldCg = false, lop3And = false, lop3Or = false, barArrive = false;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns) continue;
+					if (ptxIns->opcode == PTXInstruction::Ld
+						&& ptxIns->cacheOperation == PTXInstruction::Cg) ldCg = true;
+					if (ptxIns->opcode == PTXInstruction::Lop3
+						&& ptxIns->booleanOperator == PTXInstruction::BoolAnd) lop3And = true;
+					if (ptxIns->opcode == PTXInstruction::Lop3
+						&& ptxIns->booleanOperator == PTXInstruction::BoolOr) lop3Or = true;
+					if (ptxIns->opcode == PTXInstruction::Bar
+						&& ptxIns->barrierOperation == PTXInstruction::BarArrive) barArrive = true;
+				}
+		// require BOTH lop3 forms to be seen with their distinct operator,
+		// not just one, so a coincidental match against uninitialized
+		// memory can't make this pass for the wrong reason
+		if (!ldCg || !lop3And || !lop3Or || !barArrive) {
+			status << "shared-action regression: ld.cg=" << ldCg
+				<< " lop3.and=" << lop3And << " lop3.or=" << lop3Or
+				<< " bar.arrive=" << barArrive << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
 #define argmin(a, b) ((a) > (b) ? (b) : (a))
 #define argmax(a, b) ((b) > (a) ? (b) : (a))
 
@@ -8628,6 +8683,7 @@ public:
 			result = (result && test_LdLu());
 			result = (result && test_SuldSustCacheOperator());
 			result = (result && test_StCacheOperator());
+			result = (result && test_GrammarSharedActionFix());
 
 			// arithmetic instructions
 			result = (result && test_Abs());

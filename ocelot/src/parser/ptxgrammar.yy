@@ -1127,10 +1127,9 @@ lop3 : OPCODE_LOP3 TOKEN_B32 operand ',' operand ',' operand ',' operand
 	state.lop3();
 };
 
-lop3BoolOperator : TOKEN_AND | TOKEN_OR
-{
-	state.boolean( $<value>1 );
-};
+lop3BoolOperator : TOKEN_AND { state.boolean( $<value>1 ); }
+	| TOKEN_OR { state.boolean( $<value>1 ); }
+	;
 
 lop3 : OPCODE_LOP3 lop3BoolOperator TOKEN_B32 operand '|' operand ',' operand
 	',' operand ',' operand ',' operand ',' operand ';'
@@ -1143,10 +1142,10 @@ bfind : OPCODE_BFIND shiftAmount dataType operand ',' operand ';'
 	state.instruction( $<text>1, $<value>3 );
 };
 
-barrierOperation : TOKEN_ARRIVE | TOKEN_RED | TOKEN_SYNC
-{
-	state.barrierOperation( $<value>1, @1 );
-};
+barrierOperation : TOKEN_ARRIVE { state.barrierOperation( $<value>1, @1 ); }
+	| TOKEN_RED { state.barrierOperation( $<value>1, @1 ); }
+	| TOKEN_SYNC { state.barrierOperation( $<value>1, @1 ); }
+	;
 
 optionalBarrierOperator : reductionOperation dataType | /* or nothing */ ;
 
@@ -1435,10 +1434,9 @@ permuteMode : /* empty string */
 	state.defaultPermute();
 };
 
-cacheLevel : TOKEN_L1 | TOKEN_L2
-{
-	state.cacheLevel( $<value>1 );
-};
+cacheLevel : TOKEN_L1 { state.cacheLevel( $<value>1 ); }
+	| TOKEN_L2 { state.cacheLevel( $<value>1 ); }
+	;
 
 prefetch : OPCODE_PREFETCH addressSpace cacheLevel '[' memoryOperand ']' ';'
 {
@@ -1662,13 +1660,17 @@ tld4 : OPCODE_TLD4 colorComponent TOKEN_2D TOKEN_V4 dataType dataType
 // Surface sampling 
 // 
 
-surfaceQuery : TOKEN_WIDTH | TOKEN_HEIGHT | TOKEN_DEPTH
-	| TOKEN_CHANNEL_DATA_TYPE | TOKEN_CHANNEL_ORDER | TOKEN_NORMALIZED_COORDS
-	| TOKEN_FILTER_MODE | TOKEN_ADDR_MODE_0 | TOKEN_ADDR_MODE_1
-	| TOKEN_ADDR_MODE_2
-{
-	state.surfaceQuery( $<value>1 );
-};
+surfaceQuery : TOKEN_WIDTH { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_HEIGHT { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_DEPTH { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_CHANNEL_DATA_TYPE { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_CHANNEL_ORDER { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_NORMALIZED_COORDS { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_FILTER_MODE { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_ADDR_MODE_0 { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_ADDR_MODE_1 { state.surfaceQuery( $<value>1 ); }
+	| TOKEN_ADDR_MODE_2 { state.surfaceQuery( $<value>1 ); }
+	;
 
 txq : OPCODE_TXQ surfaceQuery dataType operand ',' '[' operand ']' ';'
 {
@@ -1682,10 +1684,13 @@ suq : OPCODE_SUQ surfaceQuery dataType operand ',' '[' operand ']' ';'
 	state.surfaceQuery( $<value>2 );
 };
 
-cacheOperation : TOKEN_CA | TOKEN_CG | TOKEN_CS | TOKEN_CV | TOKEN_NC | TOKEN_LU
-{
-	state.cacheOperation( $<value>1 );
-};
+cacheOperation : TOKEN_CA { state.cacheOperation( $<value>1 ); }
+	| TOKEN_CG { state.cacheOperation( $<value>1 ); }
+	| TOKEN_CS { state.cacheOperation( $<value>1 ); }
+	| TOKEN_CV { state.cacheOperation( $<value>1 ); }
+	| TOKEN_NC { state.cacheOperation( $<value>1 ); }
+	| TOKEN_LU { state.cacheOperation( $<value>1 ); }
+	;
 
 optionalCacheOperation : cacheOperation | /* empty */;
 
@@ -1697,15 +1702,14 @@ storeCacheOperation : TOKEN_WB { state.cacheOperation( $<value>1 ); }
 
 optionalStoreCacheOperation : storeCacheOperation | /* empty */;
 
-clampOperation : TOKEN_CLAMP | TOKEN_ZERO | TOKEN_TRAP
-{
-	state.clampOperation( $<value>1 );
-};
+clampOperation : TOKEN_CLAMP { state.clampOperation( $<value>1 ); }
+	| TOKEN_ZERO { state.clampOperation( $<value>1 ); }
+	| TOKEN_TRAP { state.clampOperation( $<value>1 ); }
+	;
 
-formatMode : TOKEN_B | TOKEN_P
-{
-	state.formatMode( $<value>1 );
-};
+formatMode : TOKEN_B { state.formatMode( $<value>1 ); }
+	| TOKEN_P { state.formatMode( $<value>1 ); }
+	;
 
 suld : OPCODE_SULD formatMode geometry optionalCacheOperation 
 	instructionVectorType dataType clampOperation arrayOperand ',' 
