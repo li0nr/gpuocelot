@@ -27,6 +27,7 @@
 
 // Standard Library Includes
 #include <cassert>
+#include <cfenv>
 #include <cmath>
 #include <cstring>
 #include <climits>
@@ -196,6 +197,20 @@ static T roundedFma(T a, T b, T c, int modifier)
 	T d = std::fma(a, b, c);
 	hydrazine::fesetround(previous);
 	return d;
+}
+
+// Truncate a * b + c to f32 and force the last bit to 1 if any bits were lost
+// (round-to-odd), so the later RNE to bf16 cannot see a false tie.
+static ir::PTXF32 fmaF32OneRound(ir::PTXF32 a, ir::PTXF32 b, ir::PTXF32 c)
+{
+	std::feclearexcept(FE_INEXACT);
+	const int previous = setRoundingMode(ir::PTXInstruction::rz);
+	volatile ir::PTXF32 d = static_cast<ir::PTXF32>(
+		static_cast<double>(a) * b + c); // bf16 product is exact in double
+	const ir::PTXU32 lost = std::fetestexcept(FE_INEXACT) ? 1U : 0U;
+	hydrazine::fesetround(previous);
+	return hydrazine::bit_cast<ir::PTXF32>(
+		hydrazine::bit_cast<ir::PTXU32>(static_cast<ir::PTXF32>(d)) | lost);
 }
 
 static executive::ReconvergenceMechanism*
@@ -4892,8 +4907,25 @@ void executive::CooperativeThreadArray::eval_Fma(CTAContext &context,
 			ir::PTXF32 a = bf16ToF32(operandAsU16(tid, instr.a));
 			ir::PTXF32 b = bf16ToF32(operandAsU16(tid, instr.b));
 			ir::PTXF32 c = bf16ToF32(operandAsU16(tid, instr.c));
-			ir::PTXU16 d = f32ToBF16Rn(std::fma(a, b, c));
+			ir::PTXU16 d = f32ToBF16(fmaF32OneRound(a, b, c), instr.modifier);
 			setRegAsB16(tid, instr.d.reg, d);
+		}
+	}
+	else if (instr.type == ir::PTXOperand::bf16x2) {
+		for (int tid = 0; tid < threadCount; tid++) {
+			if (!context.predicated(tid, instr)) continue;
+			ir::PTXU32 a = operandAsU32(tid, instr.a), b = operandAsU32(tid, instr.b),
+				c = operandAsU32(tid, instr.c);
+			ir::PTXU16 al = static_cast<ir::PTXU16>(a), ah = a >> 16,
+				bl = static_cast<ir::PTXU16>(b), bh = b >> 16;
+			ir::PTXU16 cl = static_cast<ir::PTXU16>(c), ch = c >> 16;
+			auto fma = [&](ir::PTXU16 x, ir::PTXU16 y, ir::PTXU16 z) {
+				return f32ToBF16(fmaF32OneRound(bf16ToF32(x), bf16ToF32(y),
+					bf16ToF32(z)), instr.modifier);
+			};
+			ir::PTXU16 dl = fma(al, bl, cl), dh = fma(ah, bh, ch);
+			setRegAsU32(tid, instr.d.reg, static_cast<ir::PTXU32>(dl) |
+				(static_cast<ir::PTXU32>(dh) << 16));
 		}
 	}
 	else {

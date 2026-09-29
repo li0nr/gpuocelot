@@ -4184,6 +4184,61 @@ public:
 			}
 		}
 
+		auto scalarFma = [&](int modifier, PTXU16 a, PTXU16 b, PTXU16 c,
+			PTXU16 expected) {
+			ins.modifier = modifier;
+			cta->setRegAsU16(0, 0, a); cta->setRegAsU16(0, 1, b);
+			cta->setRegAsU16(0, 3, c); cta->setRegAsU16(0, 2, 0xbeef);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			return cta->getRegAsU16(0, 2) == expected;
+		};
+		if (!scalarFma(PTXInstruction::rn, 0x3fe0, 0x3f14, 0xab80, 0x3f81)
+			|| !scalarFma(PTXInstruction::rn, 0xbfe0, 0x3f14, 0x2b80, 0xbf81)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::relu,
+				0xbf80, 0x3f80, 0, 0x0000)
+			|| !scalarFma(PTXInstruction::rn | PTXInstruction::relu,
+				0x7fc0, 0x3f80, 0, 0x7fff)
+			|| !scalarFma(PTXInstruction::rn, 0x7f7f, 0x4000, 0, 0x7f80)) {
+			status << "fma.bf16 scalar case failed\n";
+			return false;
+		}
+		auto checkValid = [&](int modifier, bool shouldAccept) {
+			ins.modifier = modifier;
+			return ins.valid().empty() == shouldAccept;
+		};
+		if (!checkValid(PTXInstruction::rn, true)
+			|| !checkValid(PTXInstruction::rz, false)
+			|| !checkValid(PTXInstruction::rn | PTXInstruction::ftz, false)
+			|| !checkValid(PTXInstruction::rn | PTXInstruction::sat, false)
+			|| !checkValid(PTXInstruction::rn | PTXInstruction::relu, true)) {
+			status << "fma.bf16 validation failed\n";
+			return false;
+		}
+		ins.modifier = PTXInstruction::rn;
+		ins.type = PTXOperand::bf16x2;
+		ins.a = reg("r1", PTXOperand::b32, 0); ins.b = reg("r2", PTXOperand::b32, 1);
+		ins.c = reg("r4", PTXOperand::b32, 3); ins.d = reg("r3", PTXOperand::b32, 2);
+		if (!checkValid(PTXInstruction::rn, true)) {
+			status << "fma.rn.bf16x2 rejected\n";
+			return false;
+		}
+
+		auto packedFma = [&](int modifier, PTXU32 a, PTXU32 b, PTXU32 c,
+			PTXU32 expected) {
+			ins.modifier = modifier;
+			cta->setRegAsU32(0, 0, a); cta->setRegAsU32(0, 1, b);
+			cta->setRegAsU32(0, 3, c); cta->setRegAsU32(0, 2, 0xdeadbeef);
+			cta->eval_Fma(cta->getActiveContext(), ins);
+			return cta->getRegAsU32(0, 2) == expected;
+		};
+		if (!packedFma(PTXInstruction::rn, 0xbfe03fe0, 0x3f143f14,
+				0x2b80ab80, 0xbf813f81)
+			|| !packedFma(PTXInstruction::rn | PTXInstruction::relu,
+				0x3f80bf80, 0x3f803f80, 0, 0x3f800000)) {
+			status << "fma.bf16x2 packed case failed\n";
+			return false;
+		}
+
 		return true;
 	}
 

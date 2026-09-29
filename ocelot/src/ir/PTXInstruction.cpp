@@ -1192,7 +1192,8 @@ std::string ir::PTXInstruction::valid() const {
 		case Fma: {
 			if (!(type == ir::PTXOperand::f16 || type == ir::PTXOperand::f16x2
 				|| type == ir::PTXOperand::f32
-				|| type == ir::PTXOperand::f64 || type == ir::PTXOperand::bf16)) {
+				|| type == ir::PTXOperand::f64 || type == ir::PTXOperand::bf16
+				|| type == ir::PTXOperand::bf16x2)) {
 				return "invalid instruction type " + PTXOperand::toString( type );
 			}
 			const int rounding = modifier & (rn | rz | rm | rp);
@@ -1210,6 +1211,10 @@ std::string ir::PTXInstruction::valid() const {
 			if ((type == PTXOperand::f16 || type == PTXOperand::f16x2)
 				&& (modifier & sat) && (modifier & relu)) {
 				return "fma.f16 sat and relu are mutually exclusive";
+			}
+			if ((type == PTXOperand::bf16 || type == PTXOperand::bf16x2)
+				&& (rounding != rn || (modifier & (ftz | sat)))) {
+				return "fma.bf16 requires .rn without ftz or sat";
 			}
 			if( !PTXOperand::valid( type, a.type ) ) {
 				return "operand A type " + PTXOperand::toString( a.type )
