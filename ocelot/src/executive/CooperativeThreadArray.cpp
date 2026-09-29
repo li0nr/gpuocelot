@@ -7264,14 +7264,14 @@ void executive::CooperativeThreadArray::eval_Rcp(CTAContext &context,
 		for (int threadID = 0; threadID < threadCount; threadID++) {
 			if (!context.predicated(threadID, instr)) continue;
 
+			// Without .ftz, .approx must still support subnormal inputs
+			// (e.g. rcp.approx.f32(2^-127) ~= 2^127); only .ftz flushes
+			// the input to signed zero, whose reciprocal is signed
+			// infinity through the division below.
 			ir::PTXF32 d, a = ftz(instr.modifier, operandAsF32(threadID, instr.a));
-			if ((instr.modifier & ir::PTXInstruction::approx) && issubnormal_(a)) {
-				d = hydrazine::copysign(std::numeric_limits<ir::PTXF32>::infinity(), a);
-			} else {
-				d = ftz(instr.modifier, roundedDiv(1.0f, a,
-					instr.modifier & ir::PTXInstruction::approx
-						? ir::PTXInstruction::rn : instr.modifier));
-			}
+			d = ftz(instr.modifier, roundedDiv(1.0f, a,
+				instr.modifier & ir::PTXInstruction::approx
+					? ir::PTXInstruction::rn : instr.modifier));
 			setRegAsF32(threadID, instr.d.reg, d);
 		}
 	}

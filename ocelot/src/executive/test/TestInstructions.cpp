@@ -3578,6 +3578,8 @@ public:
 			return false;
 		}
 
+		// Without .ftz, .approx must still support subnormal inputs and
+		// return a finite approximate reciprocal, not flush to infinity.
 		ins.type = PTXOperand::f32;
 		ins.a.type = ins.d.type = PTXOperand::f32;
 		ins.modifier = PTXInstruction::approx;
@@ -3586,9 +3588,21 @@ public:
 		cta->setRegAsF32(0, 0, subnormal);
 		cta->setRegAsF32(1, 0, -subnormal);
 		cta->eval_Rcp(cta->getActiveContext(), ins);
+		if (hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(0, 2)) != 0x7e800001u
+			|| hydrazine::bit_cast<PTXU32>(cta->getRegAsF32(1, 2)) != 0xfe800001u) {
+			status << "rcp.approx.f32 subnormal input failed\n";
+			return false;
+		}
+
+		// With .ftz, the subnormal input flushes to signed zero first, so
+		// the reciprocal is signed infinity.
+		ins.modifier = PTXInstruction::approx | PTXInstruction::ftz;
+		cta->setRegAsF32(0, 0, subnormal);
+		cta->setRegAsF32(1, 0, -subnormal);
+		cta->eval_Rcp(cta->getActiveContext(), ins);
 		if (cta->getRegAsF32(0, 2) != std::numeric_limits<PTXF32>::infinity()
 			|| cta->getRegAsF32(1, 2) != -std::numeric_limits<PTXF32>::infinity()) {
-			status << "rcp.approx.f32 subnormal input failed\n";
+			status << "rcp.approx.ftz.f32 subnormal input should flush to infinity\n";
 			return false;
 		}
 
@@ -5339,6 +5353,57 @@ public:
 		cta->eval_Lop3(cta->getActiveContext(), ins);
 		for (int thread = 0; thread < threadCount; ++thread) {
 			if (cta->getRegAsPredicate(thread, 4)) return false;
+		}
+
+		return true;
+	}
+
+	// The lop3 predicate source `q` must be walked by assignRegisters like
+	// every other register operand, or it keeps whatever register id the
+	// parser left it with instead of the id its defining instruction got.
+	bool test_Lop3RegisterAllocation() {
+		std::stringstream ptx;
+		ptx << ".version 8.2\n"
+			<< ".target sm_86\n"
+			<< ".address_size 64\n"
+			<< ".visible .entry test_lop3_regalloc() {\n"
+			<< "  .reg .b32 dd, aa, bb, cc;\n"
+			<< "  .reg .pred pp, qq;\n"
+			<< "  lop3.b32 dd, aa, bb, cc, 0x40;\n"
+			<< "  setp.eq.b32 qq, aa, bb;\n"
+			<< "  lop3.or.b32 dd|pp, aa, bb, cc, 0x3f, qq;\n"
+			<< "  ret;\n"
+			<< "}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse lop3 register allocation example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		PTXKernel* kernel = parsed.kernels().begin()->second;
+		PTXKernel::assignRegisters(*kernel->cfg());
+		PTXOperand::RegisterType qqDef = 0, qqUse = 0;
+		bool sawDef = false, sawUse = false;
+		for (auto block = kernel->cfg()->begin(); block != kernel->cfg()->end(); ++block)
+			for (auto instruction = block->instructions.begin();
+				instruction != block->instructions.end(); ++instruction) {
+				const PTXInstruction* instr =
+					dynamic_cast<const PTXInstruction*>(*instruction);
+				if (!instr) continue;
+				if (instr->opcode == PTXInstruction::SetP) {
+					qqDef = instr->d.reg;
+					sawDef = true;
+				} else if (instr->opcode == PTXInstruction::Lop3
+					&& instr->q.addressMode == PTXOperand::Register) {
+					qqUse = instr->q.reg;
+					sawUse = true;
+				}
+			}
+		if (!sawDef || !sawUse || qqDef != qqUse) {
+			status << "lop3 q operand register id " << qqUse
+				<< " does not match its definition's id " << qqDef << "\n";
+			return false;
 		}
 
 		return true;
@@ -8463,6 +8528,7 @@ public:
 			result = (result && test_Popc());
 			result = (result && test_Bmsk());
 			result = (result && test_Lop3());
+			result = (result && test_Lop3RegisterAllocation());
 			result = (result && test_And());
 			result = (result && test_Or());
 			result = (result && test_Xor());

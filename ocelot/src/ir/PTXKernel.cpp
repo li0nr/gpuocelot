@@ -450,14 +450,14 @@ PTXKernel::RegisterMap PTXKernel::assignRegisters( ControlFlowGraph& cfg )
 			instruction != block->instructions.end(); ++instruction) {
 			PTXInstruction& instr = *static_cast<PTXInstruction*>(
 				*instruction);
-			PTXOperand PTXInstruction:: * operands[] = 
-			{ &PTXInstruction::a, &PTXInstruction::b, &PTXInstruction::c, 
-				&PTXInstruction::d, &PTXInstruction::pg, 
-				&PTXInstruction::pq };
-	
+			PTXOperand PTXInstruction:: * operands[] =
+			{ &PTXInstruction::a, &PTXInstruction::b, &PTXInstruction::c,
+				&PTXInstruction::d, &PTXInstruction::pg,
+				&PTXInstruction::pq, &PTXInstruction::q };
+
 			report( " For instruction '" << instr.toString() << "'" );
-	
-			for (int i = 0; i < 6; i++) {
+
+			for (int i = 0; i < 7; i++) {
 				if ((instr.*operands[i]).addressMode 
 					== PTXOperand::Invalid) {
 					continue;
