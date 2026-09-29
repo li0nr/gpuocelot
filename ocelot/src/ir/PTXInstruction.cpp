@@ -35,6 +35,7 @@ std::string ir::PTXInstruction::toStringLoad(CacheOperation operation) {
 		case Cs: return "cs";
 		case Cv: return "cv";
 		case Nc: return "nc";
+		case Lu: return "lu";
 		default: break;
 	}
 	return "";
@@ -1287,8 +1288,11 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			if( addressSpace != Global && addressSpace != Shared 
 				&& volatility == Volatile && addressSpace != Generic ) {
-				return "only shared and global address spaces supported " 
+				return "only shared and global address spaces supported "
 					"for volatile loads";
+			}
+			if( cacheOperation == Lu && volatility == Volatile ) {
+				return "ld.lu cannot be combined with .volatile";
 			}
 			if( d.addressMode != PTXOperand::Register ) {
 				return "operand D must be a register not a " 

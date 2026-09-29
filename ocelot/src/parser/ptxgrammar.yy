@@ -1679,7 +1679,7 @@ suq : OPCODE_SUQ surfaceQuery dataType operand ',' '[' operand ']' ';'
 	state.surfaceQuery( $<value>2 );
 };
 
-cacheOperation : TOKEN_CA | TOKEN_CG | TOKEN_CS | TOKEN_CV | TOKEN_NC
+cacheOperation : TOKEN_CA | TOKEN_CG | TOKEN_CS | TOKEN_CV | TOKEN_NC | TOKEN_LU
 {
 	state.cacheOperation( $<value>1 );
 };

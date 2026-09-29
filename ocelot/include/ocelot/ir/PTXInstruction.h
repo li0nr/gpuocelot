@@ -219,6 +219,7 @@ namespace ir {
 			Cg = 2,
 			Cs = 3,
 			Nc = 4,
+			Lu = 5,
 			Wb = 0,
 			Wt = 1,
 			CacheOperation_Invalid

@@ -2902,6 +2902,7 @@ namespace parser
 			case TOKEN_CV: return ir::PTXInstruction::Cv;
 			case TOKEN_WT: return ir::PTXInstruction::Wt;
 			case TOKEN_NC: return ir::PTXInstruction::Nc;
+			case TOKEN_LU: return ir::PTXInstruction::Lu;
 			default: break;
 		}
 		return ir::PTXInstruction::CacheOperation_Invalid;

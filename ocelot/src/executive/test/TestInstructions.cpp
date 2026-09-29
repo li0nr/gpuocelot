@@ -1402,6 +1402,51 @@ public:
 		return result;
 	}
 
+	bool test_LdLu() {
+		bool result = true;
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_ld_lu() {\n"
+			<< "  .reg .f32 d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  ld.lu.f32 d, [a];\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse ld.lu example: " << error.what() << "\n";
+			return false;
+		}
+		bool foundLu = false;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns || ptxIns->opcode != PTXInstruction::Ld) continue;
+					if (ptxIns->cacheOperation == PTXInstruction::Lu) foundLu = true;
+				}
+		if (!foundLu) {
+			result = false;
+			status << "ld.lu did not parse with cacheOperation == Lu\n";
+		}
+
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Ld;
+		ins.type = PTXOperand::f32;
+		ins.addressSpace = PTXInstruction::Global;
+		ins.cacheOperation = PTXInstruction::Lu;
+		ins.volatility = PTXInstruction::Volatile;
+		ins.a = reg("a", PTXOperand::u64, 0);
+		ins.a.addressMode = PTXOperand::Indirect;
+		ins.d = reg("d", PTXOperand::f32, 1);
+		if (ins.valid().empty()) {
+			result = false;
+			status << "ld.lu combined with .volatile was incorrectly accepted\n";
+		}
+
+		return result;
+	}
+
 #define argmin(a, b) ((a) > (b) ? (b) : (a))
 #define argmax(a, b) ((b) > (a) ? (b) : (a))
 
@@ -8473,7 +8518,8 @@ public:
 			result = (result && test_Isspacep());
 			result = (result && test_IsspacepConst());
 			result = (result && test_IsspacepParam());
-	
+			result = (result && test_LdLu());
+
 			// arithmetic instructions
 			result = (result && test_Abs());
 			result = (result && test_Add());
