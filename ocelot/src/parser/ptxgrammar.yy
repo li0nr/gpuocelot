@@ -1289,6 +1289,9 @@ optionalVolatile : /* empty string */
 ldModifier : optionalVolatile optionalAddressSpace optionalCacheOperation
 	optionalInstructionVectorType;
 
+stModifier : optionalVolatile optionalAddressSpace optionalStoreCacheOperation
+	optionalInstructionVectorType;
+
 ld : OPCODE_LD ldModifier dataType arrayOperand ',' '[' memoryOperand ']' ';'
 {
 	state.instruction( $<text>1, $<value>3 );
@@ -1609,7 +1612,7 @@ slct : OPCODE_SLCT optionalFtz dataType dataType operand ',' operand ','
 	state.convertC( $<value>4, @1 );
 };
 
-st : OPCODE_ST ldModifier dataType '[' memoryOperand ']' ',' arrayOperand ';'
+st : OPCODE_ST stModifier dataType '[' memoryOperand ']' ',' arrayOperand ';'
 {
 	state.instruction( $<text>1, $<value>3 );
 };
@@ -1685,6 +1688,14 @@ cacheOperation : TOKEN_CA | TOKEN_CG | TOKEN_CS | TOKEN_CV | TOKEN_NC | TOKEN_LU
 };
 
 optionalCacheOperation : cacheOperation | /* empty */;
+
+storeCacheOperation : TOKEN_WB { state.cacheOperation( $<value>1 ); }
+	| TOKEN_CG { state.cacheOperation( $<value>1 ); }
+	| TOKEN_CS { state.cacheOperation( $<value>1 ); }
+	| TOKEN_WT { state.cacheOperation( $<value>1 ); }
+	;
+
+optionalStoreCacheOperation : storeCacheOperation | /* empty */;
 
 clampOperation : TOKEN_CLAMP | TOKEN_ZERO | TOKEN_TRAP
 {

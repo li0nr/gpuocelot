@@ -1447,6 +1447,113 @@ public:
 		return result;
 	}
 
+	// suld/sust only support .cop = {.ca, .cg, .cs, .cv} per PTX ISA; the
+	// grammar's cacheOperation production is shared with ld, which also
+	// accepts .nc and .lu, so opcode-specific validation must reject those
+	// two on surface ops.
+	bool test_SuldSustCacheOperator() {
+		bool result = true;
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Suld;
+		ins.formatMode = PTXInstruction::Unformatted;
+		ins.type = PTXOperand::b32;
+		if (!ins.valid().empty()) {
+			result = false;
+			status << "suld with default cache operator was incorrectly rejected\n";
+		}
+		ins.cacheOperation = PTXInstruction::Cv;
+		if (!ins.valid().empty()) {
+			result = false;
+			status << "suld.cv was incorrectly rejected\n";
+		}
+		ins.cacheOperation = PTXInstruction::Nc;
+		if (ins.valid().empty()) {
+			result = false;
+			status << "suld.nc was incorrectly accepted\n";
+		}
+		ins.cacheOperation = PTXInstruction::Lu;
+		if (ins.valid().empty()) {
+			result = false;
+			status << "suld.lu was incorrectly accepted\n";
+		}
+
+		ins.opcode = PTXInstruction::Sust;
+		ins.cacheOperation = PTXInstruction::Cs;
+		if (!ins.valid().empty()) {
+			result = false;
+			status << "sust.cs was incorrectly rejected\n";
+		}
+		ins.cacheOperation = PTXInstruction::Nc;
+		if (ins.valid().empty()) {
+			result = false;
+			status << "sust.nc was incorrectly accepted\n";
+		}
+		ins.cacheOperation = PTXInstruction::Lu;
+		if (ins.valid().empty()) {
+			result = false;
+			status << "sust.lu was incorrectly accepted\n";
+		}
+
+		return result;
+	}
+
+	// st only supports .cop = {.wb, .cg, .cs, .wt}; it previously shared
+	// ld's grammar production, which wrongly accepted .ca/.cv/.nc/.lu and
+	// couldn't parse .wb/.wt at all (tokens declared but never wired into
+	// any rule). st now has its own storeCacheOperation production.
+	bool test_StCacheOperator() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_st_cop() {\n"
+			<< "  .reg .f32 d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  st.wb.f32 [a], d;\n"
+			<< "  st.wt.f32 [a], d;\n"
+			<< "  st.cg.f32 [a], d;\n"
+			<< "  st.cs.f32 [a], d;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const hydrazine::Exception& error) {
+			status << "failed to parse st.wb/.wt/.cg/.cs example: " << error.what() << "\n";
+			return false;
+		}
+		unsigned int found = 0;
+		const PTXInstruction::CacheOperation expected[] = {
+			PTXInstruction::Wb, PTXInstruction::Wt,
+			PTXInstruction::Cg, PTXInstruction::Cs};
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns || ptxIns->opcode != PTXInstruction::St) continue;
+					if (found < 4 && ptxIns->cacheOperation == expected[found]) ++found;
+				}
+		if (found != 4) {
+			status << "st.wb/.wt/.cg/.cs did not all parse with the expected cache operator\n";
+			return false;
+		}
+
+		std::stringstream illegal;
+		illegal << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_st_cop_illegal() {\n"
+			<< "  .reg .f32 d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  st.ca.f32 [a], d;\n"
+			<< "  ret;\n}\n";
+		Module illegalModule;
+		try {
+			illegalModule.load(illegal);
+			status << "st.ca was incorrectly accepted by the parser\n";
+			return false;
+		}
+		catch (const std::exception&) {
+			// expected: .ca is not a legal st cache operator
+		}
+
+		return true;
+	}
+
 #define argmin(a, b) ((a) > (b) ? (b) : (a))
 #define argmax(a, b) ((b) > (a) ? (b) : (a))
 
@@ -8519,6 +8626,8 @@ public:
 			result = (result && test_IsspacepConst());
 			result = (result && test_IsspacepParam());
 			result = (result && test_LdLu());
+			result = (result && test_SuldSustCacheOperator());
+			result = (result && test_StCacheOperator());
 
 			// arithmetic instructions
 			result = (result && test_Abs());

@@ -498,6 +498,7 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	cc = 0;
 	addressSpace = AddressSpace_Invalid;
 	tailCall = false;
+	cacheOperation = Ca;
 }
 
 ir::PTXInstruction::~PTXInstruction() {
@@ -2447,16 +2448,19 @@ std::string ir::PTXInstruction::valid() const {
 		}
 		case Suld: {
 			if (formatMode == Formatted && !(type == ir::PTXOperand::b32
-				|| type == ir::PTXOperand::u32 
+				|| type == ir::PTXOperand::u32
 				|| type == ir::PTXOperand::s32
 				|| type == ir::PTXOperand::f32)) {
 				return "sust.p - data type must be .b32, .u32, .s32, or .f32";
 			}
 			else if (formatMode == Unformatted && !(type == ir::PTXOperand::b8
-				|| type == ir::PTXOperand::b16 
+				|| type == ir::PTXOperand::b16
 				|| type == ir::PTXOperand::b32
 				|| type == ir::PTXOperand::b64)) {
 				return "sust.b - data type must be .b8, .b16, .b32, or .b64";
+			}
+			if (cacheOperation == Nc || cacheOperation == Lu) {
+				return "suld cache operator must be .ca, .cg, .cs, or .cv";
 			}
 			break;
 		}
@@ -2504,16 +2508,19 @@ std::string ir::PTXInstruction::valid() const {
 		}
 		case Sust: {
 			if (formatMode == Formatted && !(type == ir::PTXOperand::b32
-				|| type == ir::PTXOperand::u32 
+				|| type == ir::PTXOperand::u32
 				|| type == ir::PTXOperand::s32
 				|| type == ir::PTXOperand::f32)) {
 				return "sust.p - data type must be .b32, .u32, .s32, or .f32";
 			}
 			else if (formatMode == Unformatted && !(type == ir::PTXOperand::b8
-				|| type == ir::PTXOperand::b16 
+				|| type == ir::PTXOperand::b16
 				|| type == ir::PTXOperand::b32
 				|| type == ir::PTXOperand::b64)) {
 				return "sust.b - data type must be .b8, .b16, .b32, or .b64";
+			}
+			if (cacheOperation == Nc || cacheOperation == Lu) {
+				return "sust cache operator must be .ca, .cg, .cs, or .cv";
 			}
 			break;
 		}
