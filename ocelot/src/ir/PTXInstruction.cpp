@@ -631,34 +631,33 @@ std::string ir::PTXInstruction::valid() const {
 			break;	
 		}
 		case Atom: {
-			if( !PTXOperand::valid( PTXOperand::b32, type ) 
-				&& !PTXOperand::valid( PTXOperand::b64, type ) 
-				&& ( atomicOperation == AtomicAnd || atomicOperation == AtomicOr 
-				|| atomicOperation == AtomicXor || atomicOperation == AtomicCas 
-				|| atomicOperation == AtomicExch ) ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for atomic " 
+			if( ( atomicOperation == AtomicAnd || atomicOperation == AtomicOr
+				|| atomicOperation == AtomicXor || atomicOperation == AtomicCas
+				|| atomicOperation == AtomicExch )
+				&& type != PTXOperand::b32 && type != PTXOperand::b64 ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for atomic "
 					+ toString( atomicOperation );
 			}
-				
-			if( !PTXOperand::valid( PTXOperand::u32, type ) 
-				&& !PTXOperand::valid( PTXOperand::u64, type ) 
-				&& !PTXOperand::valid( PTXOperand::s32, type ) 
-				&& ( atomicOperation == AtomicInc 
-				|| atomicOperation == AtomicDec ) ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for atomic " 
+			if( ( atomicOperation == AtomicInc || atomicOperation == AtomicDec )
+				&& type != PTXOperand::u32 ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for atomic "
 					+ toString( atomicOperation );
 			}
-			if( !PTXOperand::valid( PTXOperand::f32, type ) 
-				&& !PTXOperand::valid( PTXOperand::u32, type ) 
-				&& !PTXOperand::valid( PTXOperand::u64, type ) 
-				&& !PTXOperand::valid( PTXOperand::s32, type ) 
-				&& ( atomicOperation == AtomicAdd 
-				|| atomicOperation == AtomicMin 
-				|| atomicOperation == AtomicMax ) ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for atomic " 
+			if( atomicOperation == AtomicAdd
+				&& type != PTXOperand::u32 && type != PTXOperand::s32
+				&& type != PTXOperand::u64 && type != PTXOperand::f32
+				&& type != PTXOperand::f64 ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for atomic "
+					+ toString( atomicOperation );
+			}
+			if( ( atomicOperation == AtomicMin || atomicOperation == AtomicMax )
+				&& type != PTXOperand::u32 && type != PTXOperand::s32
+				&& type != PTXOperand::u64 && type != PTXOperand::s64 ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for atomic "
 					+ toString( atomicOperation );
 			}
 			if( !( addressSpace == Shared || addressSpace == Global ) ) {
@@ -1880,34 +1879,35 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Red: {
-			if( ( reductionOperation == ReductionAnd 
+			if( ( reductionOperation == ReductionAnd
 				|| reductionOperation == ReductionOr
-				|| reductionOperation == ReductionXor ) 
-				&& type != PTXOperand::b32 ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for reduction " 
+				|| reductionOperation == ReductionXor )
+				&& type != PTXOperand::b32 && type != PTXOperand::b64 ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for reduction "
 					+ toString( reductionOperation );
 			}
 			if( reductionOperation == ReductionAdd
-				&& ( type != PTXOperand::u32 && type != PTXOperand::s32 
-				&& type != PTXOperand::f32 && type != PTXOperand::u64 ) ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for reduction " 
+				&& ( type != PTXOperand::u32 && type != PTXOperand::s32
+				&& type != PTXOperand::u64 && type != PTXOperand::f32
+				&& type != PTXOperand::f64 ) ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for reduction "
 					+ toString( reductionOperation );
 			}
 			if( ( reductionOperation == ReductionInc
 				|| reductionOperation == ReductionDec )
 				&& type != PTXOperand::u32 ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for reduction " 
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for reduction "
 					+ toString( reductionOperation );
 			}
 			if( ( reductionOperation == ReductionMin
 				|| reductionOperation == ReductionMax )
-				&& ( type != PTXOperand::u32 && type != PTXOperand::s32 
-				&& type != PTXOperand::f32 ) ) {
-				return "invalid instruction type " 
-					+ PTXOperand::toString( type ) + " for reduction " 
+				&& ( type != PTXOperand::u32 && type != PTXOperand::s32
+				&& type != PTXOperand::u64 && type != PTXOperand::s64 ) ) {
+				return "invalid instruction type "
+					+ PTXOperand::toString( type ) + " for reduction "
 					+ toString( reductionOperation );
 			}
 			if( a.addressMode != PTXOperand::Address 

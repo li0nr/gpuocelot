@@ -2227,6 +2227,17 @@ void executive::CooperativeThreadArray::eval_And(CTAContext &context,
 
 */
 void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir::PTXInstruction &instr) {
+	evalAtomicRMW(context, instr, instr.atomicOperation, true);
+}
+
+// atom writes the pre-update value back to instr.d; red performs the same
+// read-modify-write but discards it (writeback == false). red carries its
+// operation in instr.reductionOperation (a distinct enum/op set from atom's
+// instr.atomicOperation), so the caller resolves and passes the operation
+// explicitly rather than this function reading instr.atomicOperation itself.
+void executive::CooperativeThreadArray::evalAtomicRMW(CTAContext &context,
+	const ir::PTXInstruction &instr, ir::PTXInstruction::AtomicOperation operation,
+	bool writeback) {
 	size_t elementSize = 0;
 
 	switch (instr.type) {
@@ -2239,7 +2250,9 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 			}
 			break;
 		case ir::PTXOperand::b64:		// fall through
-		case ir::PTXOperand::u64:
+		case ir::PTXOperand::u64:		// fall through
+		case ir::PTXOperand::s64:		// fall through
+		case ir::PTXOperand::f64:
 			{
 				elementSize = sizeof(ir::PTXU64);
 			}
@@ -2316,53 +2329,77 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					context.PC, instr);
 		}
 
-		switch (instr.atomicOperation) {
+		switch (operation) {
 			case ir::PTXInstruction::AtomicAnd:
 				{
-					if(instr.type != ir::PTXOperand::b32
-						&& instr.type != ir::PTXOperand::s32
-						&& instr.type != ir::PTXOperand::u32) {
+					if (instr.type == ir::PTXOperand::b32) {
+						ir::PTXB32 d = *((ir::PTXB32*)source);
+						if (writeback) setRegAsB32(threadID, instr.d.reg, d);
+						ir::PTXB32 b = operandAsB32(threadID, instr.b);
+						*((ir::PTXB32*)source) = d & b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB32*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::b64) {
+						ir::PTXB64 d = *((ir::PTXB64*)source);
+						if (writeback) setRegAsB64(threadID, instr.d.reg, d);
+						ir::PTXB64 b = operandAsB64(threadID, instr.b);
+						*((ir::PTXB64*)source) = d & b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB64*)source) );
+					}
+					else {
 						throw RuntimeException("invalid data type",
 							context.PC, instr);
 					}
-					ir::PTXB32 d = *((ir::PTXB32*)source);
-					setRegAsB32(threadID, instr.d.reg, d);
-					ir::PTXB32 b = operandAsB32(threadID, instr.b);
-					*((ir::PTXB32*)source) = d & b;
-					reportE(REPORT_ATOM, "Atomically updated " << d << " to "
-						<< *((ir::PTXB32*)source) );
 				}
 				break;
 			case ir::PTXInstruction::AtomicOr:
 				{
-					if(instr.type != ir::PTXOperand::b32
-						&& instr.type != ir::PTXOperand::s32
-						&& instr.type != ir::PTXOperand::u32) {
+					if (instr.type == ir::PTXOperand::b32) {
+						ir::PTXB32 d = *((ir::PTXB32*)source);
+						if (writeback) setRegAsB32(threadID, instr.d.reg, d);
+						ir::PTXB32 b = operandAsB32(threadID, instr.b);
+						*((ir::PTXB32*)source) = d | b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB32*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::b64) {
+						ir::PTXB64 d = *((ir::PTXB64*)source);
+						if (writeback) setRegAsB64(threadID, instr.d.reg, d);
+						ir::PTXB64 b = operandAsB64(threadID, instr.b);
+						*((ir::PTXB64*)source) = d | b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB64*)source) );
+					}
+					else {
 						throw RuntimeException("invalid data type",
 							context.PC, instr);
 					}
-					ir::PTXB32 d = *((ir::PTXB32*)source);
-					setRegAsB32(threadID, instr.d.reg, d);
-					ir::PTXB32 b = operandAsB32(threadID, instr.b);
-					*((ir::PTXB32*)source) = d | b;
-					reportE(REPORT_ATOM, "Atomically updated " << d << " to "
-						<< *((ir::PTXB32*)source) );
 				}
 				break;
 			case ir::PTXInstruction::AtomicXor:
 				{
-					if(instr.type != ir::PTXOperand::b32
-						&& instr.type != ir::PTXOperand::s32
-						&& instr.type != ir::PTXOperand::u32) {
+					if (instr.type == ir::PTXOperand::b32) {
+						ir::PTXB32 d = *((ir::PTXB32*)source);
+						if (writeback) setRegAsB32(threadID, instr.d.reg, d);
+						ir::PTXB32 b = operandAsB32(threadID, instr.b);
+						*((ir::PTXB32*)source) = d ^ b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB32*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::b64) {
+						ir::PTXB64 d = *((ir::PTXB64*)source);
+						if (writeback) setRegAsB64(threadID, instr.d.reg, d);
+						ir::PTXB64 b = operandAsB64(threadID, instr.b);
+						*((ir::PTXB64*)source) = d ^ b;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXB64*)source) );
+					}
+					else {
 						throw RuntimeException("invalid data type",
 							context.PC, instr);
 					}
-					ir::PTXB32 d = *((ir::PTXB32*)source);
-					setRegAsB32(threadID, instr.d.reg, d);
-					ir::PTXB32 b = operandAsB32(threadID, instr.b);
-					*((ir::PTXB32*)source) = d ^ b;
-					reportE(REPORT_ATOM, "Atomically updated " << d << " to "
-						<< *((ir::PTXB32*)source) );
 				}
 				break;
 			case ir::PTXInstruction::AtomicCas:
@@ -2371,7 +2408,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 						|| instr.type == ir::PTXOperand::s32
 						|| instr.type == ir::PTXOperand::u32) {
 						ir::PTXB32 d = *((ir::PTXB32*)source);
-						setRegAsB32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsB32(threadID, instr.d.reg, d);
 						ir::PTXB32 b = operandAsB32(threadID, instr.b);
 						ir::PTXB32 c = operandAsB32(threadID, instr.c);
 						*((ir::PTXB32*)source) = (d==b) ? c : d;
@@ -2382,7 +2419,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 						|| instr.type == ir::PTXOperand::s64
 						|| instr.type == ir::PTXOperand::u64) {
 						ir::PTXB64 d = *((ir::PTXB64*)source);
-						setRegAsB64(threadID, instr.d.reg, d);
+						if (writeback) setRegAsB64(threadID, instr.d.reg, d);
 						ir::PTXB64 b = operandAsB64(threadID, instr.b);
 						ir::PTXB64 c = operandAsB64(threadID, instr.c);
 						*((ir::PTXB64*)source) = (d==b) ? c : d;
@@ -2401,7 +2438,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 						|| instr.type == ir::PTXOperand::s32
 						|| instr.type == ir::PTXOperand::u32) {
 						ir::PTXB32 d = *((ir::PTXB32*)source);
-						setRegAsB32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsB32(threadID, instr.d.reg, d);
 						ir::PTXB32 b = operandAsB32(threadID, instr.b);
 						*((ir::PTXB32*)source) = b;
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2411,7 +2448,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 						|| instr.type == ir::PTXOperand::s64
 						|| instr.type == ir::PTXOperand::u64) {
 						ir::PTXB64 d = *((ir::PTXB64*)source);
-						setRegAsB64(threadID, instr.d.reg, d);
+						if (writeback) setRegAsB64(threadID, instr.d.reg, d);
 						ir::PTXB64 b = operandAsB64(threadID, instr.b);
 						*((ir::PTXB64*)source) = b;
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2427,7 +2464,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 				{
 					if (instr.type == ir::PTXOperand::u32) {
 						ir::PTXU32 d = *((ir::PTXU32*)source);
-						setRegAsU32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsU32(threadID, instr.d.reg, d);
 						ir::PTXU32 b = operandAsU32(threadID, instr.b);
 						*((ir::PTXU32*)source) = b + d;
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2435,7 +2472,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					}
 					else if (instr.type == ir::PTXOperand::s32) {
 						ir::PTXS32 d = *((ir::PTXS32*)source);
-						setRegAsS32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsS32(threadID, instr.d.reg, d);
 						ir::PTXS32 b = operandAsS32(threadID, instr.b);
 						*((ir::PTXS32*)source) = b + d;
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2443,7 +2480,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					}
 					else if (instr.type == ir::PTXOperand::f32) {
 						ir::PTXF32 d = *((ir::PTXF32*)source);
-						setRegAsF32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsF32(threadID, instr.d.reg, d);
 						ir::PTXF32 b = operandAsF32(threadID, instr.b);
 						*((ir::PTXF32*)source) = b + d;
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2451,11 +2488,19 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					}
 					else if (instr.type == ir::PTXOperand::u64) {
 						ir::PTXU64 d = *((ir::PTXU64*)source);
-						setRegAsU64(threadID, instr.d.reg, d);
+						if (writeback) setRegAsU64(threadID, instr.d.reg, d);
 						ir::PTXU64 b = operandAsU64(threadID, instr.b);
 						*((ir::PTXU64*)source) = b + d;
 						reportE(REPORT_ATOM, "Atomically updated " << d
 							<< " to " << *((ir::PTXU64*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::f64) {
+						ir::PTXF64 d = *((ir::PTXF64*)source);
+						if (writeback) setRegAsF64(threadID, instr.d.reg, d);
+						ir::PTXF64 b = operandAsF64(threadID, instr.b);
+						*((ir::PTXF64*)source) = b + d;
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXF64*)source) );
 					}
 					else {
 						throw RuntimeException("invalid data type",
@@ -2470,7 +2515,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 							context.PC, instr);
 					}
 					ir::PTXU32 d = *((ir::PTXU32*)source);
-					setRegAsU32(threadID, instr.d.reg, d);
+					if (writeback) setRegAsU32(threadID, instr.d.reg, d);
 					ir::PTXU32 b = operandAsU32(threadID, instr.b);
 					*((ir::PTXU32*)source) = (d >= b) ? 0 : d + 1;
 					reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2484,7 +2529,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 							context.PC, instr);
 					}
 					ir::PTXU32 d = *((ir::PTXU32*)source);
-					setRegAsU32(threadID, instr.d.reg, d);
+					if (writeback) setRegAsU32(threadID, instr.d.reg, d);
 					ir::PTXU32 b = operandAsU32(threadID, instr.b);
 					*((ir::PTXU32*)source) = ((d == 0) || (d > b)) ? b : d - 1;
 					reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2495,7 +2540,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 				{
 					if (instr.type == ir::PTXOperand::u32) {
 						ir::PTXU32 d = *((ir::PTXU32*)source);
-						setRegAsU32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsU32(threadID, instr.d.reg, d);
 						ir::PTXU32 b = operandAsU32(threadID, instr.b);
 						*((ir::PTXU32*)source) = min(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2503,19 +2548,27 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					}
 					else if (instr.type == ir::PTXOperand::s32) {
 						ir::PTXS32 d = *((ir::PTXS32*)source);
-						setRegAsS32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsS32(threadID, instr.d.reg, d);
 						ir::PTXS32 b = operandAsS32(threadID, instr.b);
 						*((ir::PTXS32*)source) = min(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
 							<< " to " << *((ir::PTXS32*)source) );
 					}
-					else if (instr.type == ir::PTXOperand::f32) {
-						ir::PTXF32 d = *((ir::PTXF32*)source);
-						setRegAsF32(threadID, instr.d.reg, d);
-						ir::PTXF32 b = operandAsF32(threadID, instr.b);
-						*((ir::PTXF32*)source) = min(b, d);
+					else if (instr.type == ir::PTXOperand::u64) {
+						ir::PTXU64 d = *((ir::PTXU64*)source);
+						if (writeback) setRegAsU64(threadID, instr.d.reg, d);
+						ir::PTXU64 b = operandAsU64(threadID, instr.b);
+						*((ir::PTXU64*)source) = min(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
-							<< " to " << *((ir::PTXF32*)source) );
+							<< " to " << *((ir::PTXU64*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::s64) {
+						ir::PTXS64 d = *((ir::PTXS64*)source);
+						if (writeback) setRegAsS64(threadID, instr.d.reg, d);
+						ir::PTXS64 b = operandAsS64(threadID, instr.b);
+						*((ir::PTXS64*)source) = min(b, d);
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXS64*)source) );
 					}
 					else {
 						throw RuntimeException("invalid data type",
@@ -2527,7 +2580,7 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 				{
 					if (instr.type == ir::PTXOperand::u32) {
 						ir::PTXU32 d = *((ir::PTXU32*)source);
-						setRegAsU32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsU32(threadID, instr.d.reg, d);
 						ir::PTXU32 b = operandAsU32(threadID, instr.b);
 						*((ir::PTXU32*)source) = max(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
@@ -2535,19 +2588,27 @@ void executive::CooperativeThreadArray::eval_Atom(CTAContext &context, const ir:
 					}
 					else if (instr.type == ir::PTXOperand::s32) {
 						ir::PTXS32 d = *((ir::PTXS32*)source);
-						setRegAsS32(threadID, instr.d.reg, d);
+						if (writeback) setRegAsS32(threadID, instr.d.reg, d);
 						ir::PTXS32 b = operandAsS32(threadID, instr.b);
 						*((ir::PTXS32*)source) = max(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
 							<< " to " << *((ir::PTXS32*)source) );
 					}
-					else if (instr.type == ir::PTXOperand::f32) {
-						ir::PTXF32 d = *((ir::PTXF32*)source);
-						setRegAsF32(threadID, instr.d.reg, d);
-						ir::PTXF32 b = operandAsF32(threadID, instr.b);
-						*((ir::PTXF32*)source) = max(b, d);
+					else if (instr.type == ir::PTXOperand::u64) {
+						ir::PTXU64 d = *((ir::PTXU64*)source);
+						if (writeback) setRegAsU64(threadID, instr.d.reg, d);
+						ir::PTXU64 b = operandAsU64(threadID, instr.b);
+						*((ir::PTXU64*)source) = max(b, d);
 						reportE(REPORT_ATOM, "Atomically updated " << d
-							<< " to " << *((ir::PTXF32*)source) );
+							<< " to " << *((ir::PTXU64*)source) );
+					}
+					else if (instr.type == ir::PTXOperand::s64) {
+						ir::PTXS64 d = *((ir::PTXS64*)source);
+						if (writeback) setRegAsS64(threadID, instr.d.reg, d);
+						ir::PTXS64 b = operandAsS64(threadID, instr.b);
+						*((ir::PTXS64*)source) = max(b, d);
+						reportE(REPORT_ATOM, "Atomically updated " << d
+							<< " to " << *((ir::PTXS64*)source) );
 					}
 					else {
 						throw RuntimeException("invalid data type",
@@ -7308,8 +7369,21 @@ void executive::CooperativeThreadArray::eval_Rcp(CTAContext &context,
 
 */
 void executive::CooperativeThreadArray::eval_Red(CTAContext &context, const ir::PTXInstruction &instr) {
-	trace();
-	throw RuntimeException("instruction not implemented", context.PC, instr);
+	ir::PTXInstruction::AtomicOperation operation;
+	switch (instr.reductionOperation) {
+		case ir::PTXInstruction::ReductionAnd: operation = ir::PTXInstruction::AtomicAnd; break;
+		case ir::PTXInstruction::ReductionXor: operation = ir::PTXInstruction::AtomicXor; break;
+		case ir::PTXInstruction::ReductionOr: operation = ir::PTXInstruction::AtomicOr; break;
+		case ir::PTXInstruction::ReductionAdd: operation = ir::PTXInstruction::AtomicAdd; break;
+		case ir::PTXInstruction::ReductionInc: operation = ir::PTXInstruction::AtomicInc; break;
+		case ir::PTXInstruction::ReductionDec: operation = ir::PTXInstruction::AtomicDec; break;
+		case ir::PTXInstruction::ReductionMin: operation = ir::PTXInstruction::AtomicMin; break;
+		case ir::PTXInstruction::ReductionMax: operation = ir::PTXInstruction::AtomicMax; break;
+		default:
+			throw RuntimeException("unsupported reduction operation",
+				context.PC, instr);
+	}
+	evalAtomicRMW(context, instr, operation, false);
 }
 
 /*!

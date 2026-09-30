@@ -1648,6 +1648,248 @@ public:
 		return true;
 	}
 
+	// eval_Red used to unconditionally throw "instruction not implemented".
+	// red is atom minus the writeback of the pre-update value; it shares
+	// evalAtomicRMW with eval_Atom but resolves its operation from the
+	// distinct reductionOperation field/enum rather than atomicOperation.
+	bool test_Red() {
+		PTXU32 mem = 10;
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Red;
+		ins.type = PTXOperand::u32;
+		ins.addressSpace = PTXInstruction::Global;
+		ins.reductionOperation = PTXInstruction::ReductionAdd;
+		ins.a = reg("a", PTXOperand::u64, 0);
+		ins.a.addressMode = PTXOperand::Indirect;
+		ins.b = imm_uint("b", PTXOperand::u32, 5);
+		for (int i = 0; i < threadCount; i++) {
+			cta->setRegAsU64(i, 0, (PTXU64)&mem);
+		}
+		cta->eval_Red(cta->getActiveContext(), ins);
+		if (mem != 10 + 5u * threadCount) {
+			status << "red.global.add.u32 gave " << mem << ", expected "
+				<< (10 + 5u * threadCount) << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
+	// Covers the atom/red type/operation table (PTX ISA Table 35/36) after
+	// correcting f32 min/max, and/or/xor bitness, and inc/dec typing.
+	bool test_AtomicRedTypeTable() {
+		bool result = true;
+
+		// atom.and.b64: verify bitwise AND and old-value writeback.
+		{
+			PTXU64 mem = 0xFF00FF00FF00FF00ULL;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::b64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicAnd;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_uint("b", PTXOperand::b64, 0x0F0F0F0F0F0F0F0FULL);
+			ins.d = reg("d", PTXOperand::b64, 1);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Atom(cta->getActiveContext(), ins);
+			if (mem != 0x0F000F000F000F00ULL) {
+				status << "atom.and.b64 gave " << std::hex << mem
+					<< ", expected 0x0f000f000f000f00\n" << std::dec;
+				result = false;
+			}
+			if (cta->getRegAsB64(0, 1) != 0xFF00FF00FF00FF00ULL) {
+				status << "atom.and.b64 old-value writeback incorrect\n";
+				result = false;
+			}
+		}
+
+		// atom.add.f64: verify float64 add and old-value writeback.
+		{
+			PTXF64 mem = 10.5;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::f64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicAdd;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_float("b", PTXOperand::f64, 2.25);
+			ins.d = reg("d", PTXOperand::f64, 1);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Atom(cta->getActiveContext(), ins);
+			if (mem != 10.5 + 2.25 * threadCount) {
+				status << "atom.add.f64 gave " << mem << ", expected "
+					<< (10.5 + 2.25 * threadCount) << "\n";
+				result = false;
+			}
+			if (cta->getRegAsF64(0, 1) != 10.5) {
+				status << "atom.add.f64 old-value writeback incorrect\n";
+				result = false;
+			}
+		}
+
+		// atom.min.s64: verify signed 64-bit min and old-value writeback.
+		{
+			PTXS64 mem = 100;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::s64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicMin;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_int("b", PTXOperand::s64, -50);
+			ins.d = reg("d", PTXOperand::s64, 1);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Atom(cta->getActiveContext(), ins);
+			if (mem != -50) {
+				status << "atom.min.s64 gave " << mem << ", expected -50\n";
+				result = false;
+			}
+			if (cta->getRegAsS64(0, 1) != 100) {
+				status << "atom.min.s64 old-value writeback incorrect\n";
+				result = false;
+			}
+		}
+
+		// red.and.b64: verify bitwise AND on a 64-bit value.
+		{
+			PTXU64 mem = 0xAAAAAAAAAAAAAAAAULL;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Red;
+			ins.type = PTXOperand::b64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.reductionOperation = PTXInstruction::ReductionAnd;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_uint("b", PTXOperand::b64, 0x0F0F0F0F0F0F0F0FULL);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Red(cta->getActiveContext(), ins);
+			if (mem != 0x0A0A0A0A0A0A0A0AULL) {
+				status << "red.and.b64 gave " << std::hex << mem
+					<< ", expected 0x0a0a0a0a0a0a0a0a\n" << std::dec;
+				result = false;
+			}
+		}
+
+		// red.add.f64: verify float64 add.
+		{
+			PTXF64 mem = 1.0;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Red;
+			ins.type = PTXOperand::f64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.reductionOperation = PTXInstruction::ReductionAdd;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_float("b", PTXOperand::f64, 0.5);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Red(cta->getActiveContext(), ins);
+			if (mem != 1.0 + 0.5 * threadCount) {
+				status << "red.add.f64 gave " << mem << ", expected "
+					<< (1.0 + 0.5 * threadCount) << "\n";
+				result = false;
+			}
+		}
+
+		// red.max.u64: verify unsigned 64-bit max.
+		{
+			PTXU64 mem = 5;
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Red;
+			ins.type = PTXOperand::u64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.reductionOperation = PTXInstruction::ReductionMax;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_uint("b", PTXOperand::u64, 100);
+			for (int i = 0; i < threadCount; i++) {
+				cta->setRegAsU64(i, 0, (PTXU64)&mem);
+			}
+			cta->eval_Red(cta->getActiveContext(), ins);
+			if (mem != 100) {
+				status << "red.max.u64 gave " << mem << ", expected 100\n";
+				result = false;
+			}
+		}
+
+		// Negative validation cases: now-illegal type/operation combinations
+		// must be rejected by PTXInstruction::valid().
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::f32;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicMin;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_float("b", PTXOperand::f32, 1.0);
+			ins.d = reg("d", PTXOperand::f32, 1);
+			if (ins.valid().empty()) {
+				status << "atom.min.f32 was wrongly accepted as valid\n";
+				result = false;
+			}
+		}
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Red;
+			ins.type = PTXOperand::f32;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.reductionOperation = PTXInstruction::ReductionMin;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_float("b", PTXOperand::f32, 1.0);
+			if (ins.valid().empty()) {
+				status << "red.min.f32 was wrongly accepted as valid\n";
+				result = false;
+			}
+		}
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::s32;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicAnd;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_uint("b", PTXOperand::s32, 1);
+			ins.d = reg("d", PTXOperand::s32, 1);
+			if (ins.valid().empty()) {
+				status << "atom.and.s32 was wrongly accepted as valid\n";
+				result = false;
+			}
+		}
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Atom;
+			ins.type = PTXOperand::u64;
+			ins.addressSpace = PTXInstruction::Global;
+			ins.atomicOperation = PTXInstruction::AtomicInc;
+			ins.a = reg("a", PTXOperand::u64, 0);
+			ins.a.addressMode = PTXOperand::Indirect;
+			ins.b = imm_uint("b", PTXOperand::u64, 1);
+			ins.d = reg("d", PTXOperand::u64, 1);
+			if (ins.valid().empty()) {
+				status << "atom.inc.u64 was wrongly accepted as valid\n";
+				result = false;
+			}
+		}
+
+		return result;
+	}
+
 #define argmin(a, b) ((a) > (b) ? (b) : (a))
 #define argmax(a, b) ((b) > (a) ? (b) : (a))
 
@@ -8724,6 +8966,8 @@ public:
 			result = (result && test_StCacheOperator());
 			result = (result && test_GrammarSharedActionFix());
 			result = (result && test_PrefetchOpcode());
+			result = (result && test_Red());
+			result = (result && test_AtomicRedTypeTable());
 
 			// arithmetic instructions
 			result = (result && test_Abs());

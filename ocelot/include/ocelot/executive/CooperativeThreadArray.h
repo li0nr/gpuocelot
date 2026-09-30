@@ -456,6 +456,8 @@ namespace executive {
 		void eval_AddC(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_And(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Atom(CTAContext &context, const ir::PTXInstruction &instr);
+		void evalAtomicRMW(CTAContext &context, const ir::PTXInstruction &instr,
+			ir::PTXInstruction::AtomicOperation operation, bool writeback);
 		void eval_Bar(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Bfi(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Bfind(CTAContext &context, const ir::PTXInstruction &instr);
