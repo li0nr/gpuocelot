@@ -261,6 +261,8 @@ namespace parser
 					void vote( int token );
 					void shuffle( int token );
 					void level( int token );
+					void semantics( int token );
+					void scope( int token );
 					void permute( int token );
 					void floatingPointMode( int token );
 					void defaultPermute();
@@ -350,6 +352,7 @@ namespace parser
 			static ir::PTXInstruction::VoteMode tokenToVoteMode( int );
 			static ir::PTXInstruction::ShuffleMode tokenToShuffleMode( int );
 			static ir::PTXInstruction::Level tokenToLevel( int );
+			static ir::PTXInstruction::Semantics tokenToSemantics( int );
 			static ir::PTXInstruction::PermuteMode tokenToPermuteMode( int );
 			static ir::PTXInstruction::FloatingPointMode
 				tokenToFloatingPointMode( int);

@@ -152,6 +152,8 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return OPCODE_EX2; }
 "exit"                          { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_EXIT; }
+"fence"                         { sstrcpy( yylval->text, yytext, 1024 ); \
+                                    return OPCODE_FENCE; }
 "fma"                           { sstrcpy( yylval->text, yytext, 1024 ); \
                                     return OPCODE_FMA; }
 "fns"                           { sstrcpy( yylval->text, yytext, 1024 ); \
@@ -334,6 +336,12 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".cta"                          { yylval->value = TOKEN_CTA; return TOKEN_CTA; }
 ".gl"                           { yylval->value = TOKEN_GL; return TOKEN_GL; }
 ".sys"                          { yylval->value = TOKEN_SYS; return TOKEN_SYS; }
+".gpu"                          { yylval->value = TOKEN_GPU; return TOKEN_GPU; }
+".sc"                           { yylval->value = TOKEN_SC; return TOKEN_SC; }
+".acq_rel"                      { yylval->value = TOKEN_ACQ_REL; return TOKEN_ACQ_REL; }
+".acquire"                      { yylval->value = TOKEN_ACQUIRE; return TOKEN_ACQUIRE; }
+".release"                      { yylval->value = TOKEN_RELEASE; return TOKEN_RELEASE; }
+".relaxed"                      { yylval->value = TOKEN_RELAXED; return TOKEN_RELAXED; }
 
 "sm_10"                         { yylval->value = TOKEN_SM10; 
                                     return TOKEN_SM10; }

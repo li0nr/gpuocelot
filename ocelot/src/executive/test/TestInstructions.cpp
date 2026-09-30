@@ -1675,6 +1675,155 @@ public:
 		return true;
 	}
 
+	// fence was entirely unimplemented -- no lexer token, no grammar rule,
+	// no Opcode value. Verifies parsing of the basic thread-fence form
+	// (sem optional, defaulting to acq_rel) and that execution is a no-op,
+	// mirroring the already-implemented membar.
+	bool test_Fence() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_fence() {\n"
+			<< "  fence.sc.gpu;\n"
+			<< "  fence.acquire.cta;\n"
+			<< "  fence.sys;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse fence example: " << error.what() << "\n";
+			return false;
+		}
+		std::vector<const PTXInstruction*> fences;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (ptxIns && ptxIns->opcode == PTXInstruction::Fence) fences.push_back(ptxIns);
+				}
+		if (fences.size() != 3) {
+			status << "expected 3 fence instructions, found " << fences.size() << "\n";
+			return false;
+		}
+		if (fences[0]->semantics != PTXInstruction::Sc
+			|| fences[0]->level != PTXInstruction::GlobalLevel) {
+			status << "fence.sc.gpu: semantics=" << fences[0]->semantics
+				<< " level=" << fences[0]->level << "\n";
+			return false;
+		}
+		if (fences[1]->semantics != PTXInstruction::Acquire
+			|| fences[1]->level != PTXInstruction::CtaLevel) {
+			status << "fence.acquire.cta: semantics=" << fences[1]->semantics
+				<< " level=" << fences[1]->level << "\n";
+			return false;
+		}
+		if (fences[2]->semantics != PTXInstruction::AcqRel
+			|| fences[2]->level != PTXInstruction::SystemLevel) {
+			status << "fence.sys (no .sem, should default to acq_rel): semantics="
+				<< fences[2]->semantics << " level=" << fences[2]->level << "\n";
+			return false;
+		}
+
+		// trivial no-op check
+		PTXInstruction ins;
+		ins.opcode = PTXInstruction::Fence;
+		try { cta->eval_Fence(cta->getActiveContext(), ins); }
+		catch (const std::exception& error) {
+			status << "eval_Fence threw: " << error.what() << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
+	// atom/red previously could not parse the optional {.sem}{.scope}
+	// memory-ordering prefix at all. Verifies parsing of all legal atom
+	// .sem forms (relaxed/acquire/release/acq_rel, no .sc), all legal red
+	// .sem forms (relaxed/release only), optional .scope, and that .sem
+	// defaults to .relaxed when omitted, per PTX ISA 9.7.14.5/9.7.14.6.
+	bool test_AtomicRedSemantics() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_atomic_red_sem() {\n"
+			<< "  .reg .u64 a;\n"
+			<< "  .reg .u32 b, d;\n"
+			<< "  atom.relaxed.gpu.global.add.u32 d, [a], b;\n"
+			<< "  atom.acquire.cta.global.add.u32 d, [a], b;\n"
+			<< "  atom.global.add.u32 d, [a], b;\n"
+			<< "  red.relaxed.global.add.u32 a, b;\n"
+			<< "  red.release.gpu.global.add.u32 a, b;\n"
+			<< "  red.global.add.u32 a, b;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse atom/red .sem/.scope example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::vector<const PTXInstruction*> atoms, reds;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns) continue;
+					if (ptxIns->opcode == PTXInstruction::Atom) atoms.push_back(ptxIns);
+					if (ptxIns->opcode == PTXInstruction::Red) reds.push_back(ptxIns);
+				}
+		if (atoms.size() != 3 || reds.size() != 3) {
+			status << "expected 3 atom + 3 red instructions, found "
+				<< atoms.size() << " atom, " << reds.size() << " red\n";
+			return false;
+		}
+		if (atoms[0]->semantics != PTXInstruction::Relaxed
+			|| atoms[0]->scope != PTXInstruction::GlobalLevel) {
+			status << "atom.relaxed.gpu: semantics=" << atoms[0]->semantics
+				<< " scope=" << atoms[0]->scope << "\n";
+			return false;
+		}
+		if (atoms[1]->semantics != PTXInstruction::Acquire
+			|| atoms[1]->scope != PTXInstruction::CtaLevel) {
+			status << "atom.acquire.cta: semantics=" << atoms[1]->semantics
+				<< " scope=" << atoms[1]->scope << "\n";
+			return false;
+		}
+		if (atoms[2]->semantics != PTXInstruction::Relaxed
+			|| atoms[2]->scope != PTXInstruction::Level_Invalid) {
+			status << "atom (no .sem/.scope, should default to relaxed): semantics="
+				<< atoms[2]->semantics << " scope=" << atoms[2]->scope << "\n";
+			return false;
+		}
+		if (atoms[2]->addressSpace != PTXInstruction::Global) {
+			status << "atom (no .sem/.scope): addressSpace corrupted, got "
+				<< atoms[2]->addressSpace << "\n";
+			return false;
+		}
+		if (reds[0]->semantics != PTXInstruction::Relaxed
+			|| reds[0]->scope != PTXInstruction::Level_Invalid) {
+			status << "red.relaxed: semantics=" << reds[0]->semantics
+				<< " scope=" << reds[0]->scope << "\n";
+			return false;
+		}
+		if (reds[1]->semantics != PTXInstruction::Release
+			|| reds[1]->scope != PTXInstruction::GlobalLevel) {
+			status << "red.release.gpu: semantics=" << reds[1]->semantics
+				<< " scope=" << reds[1]->scope << "\n";
+			return false;
+		}
+		if (reds[2]->semantics != PTXInstruction::Relaxed
+			|| reds[2]->scope != PTXInstruction::Level_Invalid) {
+			status << "red (no .sem/.scope, should default to relaxed): semantics="
+				<< reds[2]->semantics << " scope=" << reds[2]->scope << "\n";
+			return false;
+		}
+		if (reds[2]->addressSpace != PTXInstruction::Global) {
+			status << "red (no .sem/.scope): addressSpace corrupted, got "
+				<< reds[2]->addressSpace << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
 	// Covers the atom/red type/operation table (PTX ISA Table 35/36) after
 	// correcting f32 min/max, and/or/xor bitness, and inc/dec typing.
 	bool test_AtomicRedTypeTable() {
@@ -8967,6 +9116,8 @@ public:
 			result = (result && test_GrammarSharedActionFix());
 			result = (result && test_PrefetchOpcode());
 			result = (result && test_Red());
+			result = (result && test_Fence());
+			result = (result && test_AtomicRedSemantics());
 			result = (result && test_AtomicRedTypeTable());
 
 			// arithmetic instructions

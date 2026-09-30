@@ -786,7 +786,7 @@ namespace parser
 		statement.column = location.first_column;		
 		
 		report( "   At (" << statement.line << "," << statement.column
-			<< ") : Parsed statement " << statements.size() 
+			<< ") : Parsed statement " << statements.size()
 			<< " \"" << statement.toString() << "\"" );
 		statements.push_back( statement );
 
@@ -1870,6 +1870,16 @@ namespace parser
 	{
 		statement.instruction.level = tokenToLevel( token );
 	}
+
+	void PTXParser::State::semantics( int token )
+	{
+		statement.instruction.semantics = tokenToSemantics( token );
+	}
+
+	void PTXParser::State::scope( int token )
+	{
+		statement.instruction.scope = tokenToLevel( token );
+	}
 	
 	void PTXParser::State::permute( int token )
 	{
@@ -2716,6 +2726,7 @@ namespace parser
 		if( string == "mma" ) return ir::PTXInstruction::Mma;
 		if( string == "max" ) return ir::PTXInstruction::Max;
 		if( string == "membar" ) return ir::PTXInstruction::Membar;
+		if( string == "fence" ) return ir::PTXInstruction::Fence;
 		if( string == "min" ) return ir::PTXInstruction::Min;
 		if( string == "mov" ) return ir::PTXInstruction::Mov;
 		if( string == "mul24" ) return ir::PTXInstruction::Mul24;
@@ -3053,11 +3064,27 @@ namespace parser
 		{
 			case TOKEN_CTA: return ir::PTXInstruction::CtaLevel; break;
 			case TOKEN_GL: return ir::PTXInstruction::GlobalLevel; break;
+			case TOKEN_GPU: return ir::PTXInstruction::GlobalLevel; break;
 			case TOKEN_SYS: return ir::PTXInstruction::SystemLevel; break;
 			default: break;
 		}
-		
-		return ir::PTXInstruction::Level_Invalid;		
+
+		return ir::PTXInstruction::Level_Invalid;
+	}
+
+	ir::PTXInstruction::Semantics PTXParser::tokenToSemantics( int token )
+	{
+		switch( token )
+		{
+			case TOKEN_SC: return ir::PTXInstruction::Sc; break;
+			case TOKEN_ACQ_REL: return ir::PTXInstruction::AcqRel; break;
+			case TOKEN_ACQUIRE: return ir::PTXInstruction::Acquire; break;
+			case TOKEN_RELEASE: return ir::PTXInstruction::Release; break;
+			case TOKEN_RELAXED: return ir::PTXInstruction::Relaxed; break;
+			default: break;
+		}
+
+		return ir::PTXInstruction::Semantics_Invalid;
 	}
 	
 	ir::PTXInstruction::PermuteMode PTXParser::tokenToPermuteMode( int token )

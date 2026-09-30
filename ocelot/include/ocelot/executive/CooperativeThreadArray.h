@@ -491,6 +491,7 @@ namespace executive {
 		void eval_Mad(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Max(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Membar(CTAContext &context, const ir::PTXInstruction &instr);
+		void eval_Fence(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Min(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Mov(CTAContext &context, const ir::PTXInstruction &instr);
 		void eval_Mul24(CTAContext &context, const ir::PTXInstruction &instr);

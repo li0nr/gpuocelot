@@ -19,6 +19,18 @@ std::string ir::PTXInstruction::toString( Level l ) {
 	return "";
 }
 
+std::string ir::PTXInstruction::toString( Semantics s ) {
+	switch( s ) {
+		case Sc:      return "sc";      break;
+		case AcqRel:  return "acq_rel"; break;
+		case Acquire: return "acquire"; break;
+		case Release: return "release"; break;
+		case Relaxed: return "relaxed"; break;
+		default: break;
+	}
+	return "";
+}
+
 std::string ir::PTXInstruction::toString(CacheLevel cache) {
 	switch( cache ) {
 		case L1: return "L1";
@@ -412,6 +424,7 @@ std::string ir::PTXInstruction::toString( Opcode opcode ) {
 		case MadC:       return "madc";        break;
 		case Max:        return "max";        break;
 		case Membar:     return "membar";     break;
+		case Fence:      return "fence";      break;
 		case Min:        return "min";        break;
 		case Mov:        return "mov";        break;
 		case Mul24:      return "mul24";      break;
@@ -500,6 +513,8 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	tailCall = false;
 	cacheOperation = Ca;
 	booleanOperator = BoolAnd;
+	semantics = AcqRel;
+	scope = Level_Invalid;
 }
 
 ir::PTXInstruction::~PTXInstruction() {
@@ -1573,6 +1588,9 @@ std::string ir::PTXInstruction::valid() const {
 		case Membar: {
 			break;
 		}
+		case Fence: {
+			break;
+		}
 		case Min: {
 			if( !( type != PTXOperand::s8 && type != PTXOperand::u8 && 
 				type != PTXOperand::b8 && type != PTXOperand::pred ) ) {
@@ -2605,10 +2623,19 @@ std::string ir::PTXInstruction::toString() const {
 					+ b.toString();
 		}
 		case Atom: {
-			std::string result = guard() + "atom." + toString( addressSpace ) 
-				+ "." + toString( atomicOperation ) + "." 
+			std::string result = guard() + "atom.";
+			if( semantics != Relaxed ) {
+				result += toString( semantics ) + ".";
+			}
+			if( scope != Level_Invalid ) {
+				// ponytail: same ".gpu" spelling quirk as fence's printer
+				result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
+					+ std::string( "." );
+			}
+			result += toString( addressSpace )
+				+ "." + toString( atomicOperation ) + "."
 				+ PTXOperand::toString( type ) + " "
-				+ d.toString() + ", [" + a.toString() + "], " 
+				+ d.toString() + ", [" + a.toString() + "], "
 				+ b.toString();
 			if( c.addressMode != PTXOperand::Invalid ) {
 				result += ", " + c.toString();
@@ -2891,6 +2918,12 @@ std::string ir::PTXInstruction::toString() const {
 		case Membar: {
 			return guard() + "membar." + toString( level );
 		}
+		case Fence: {
+			// ponytail: fence spells the device-wide scope ".gpu", membar spells
+			// the same GlobalLevel value ".gl" -- toString(Level) can't be reused as-is
+			std::string scope = ( level == GlobalLevel ) ? "gpu" : toString( level );
+			return guard() + "fence." + toString( semantics ) + "." + scope;
+		}
 		case Min: {
 			return guard() + "min." + modifierString(modifier, carry)
 				+ PTXOperand::toString( type ) + " "
@@ -2960,10 +2993,19 @@ std::string ir::PTXInstruction::toString() const {
 			return result;
 		}
 		case Red: {
-			return guard() + "red." + toString( addressSpace ) + "." 
-				+ toString( reductionOperation ) + "." 
-				+ PTXOperand::toString( type ) + " " + d.toString() + ", " 
+			std::string result = guard() + "red.";
+			if( semantics != Relaxed ) {
+				result += toString( semantics ) + ".";
+			}
+			if( scope != Level_Invalid ) {
+				result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
+					+ std::string( "." );
+			}
+			result += toString( addressSpace ) + "."
+				+ toString( reductionOperation ) + "."
+				+ PTXOperand::toString( type ) + " " + d.toString() + ", "
 				+ a.toString();
+			return result;
 		}
 		case Rem: {
 			return guard() + "rem." + PTXOperand::toString( type ) + " "

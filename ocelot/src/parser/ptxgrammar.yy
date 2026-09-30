@@ -67,6 +67,7 @@
 %token<text> OPCODE_BFI OPCODE_BFE OPCODE_BMSK OPCODE_FNS OPCODE_TANH OPCODE_TESTP OPCODE_TLD4 OPCODE_BAR
 %token<text> OPCODE_PREFETCH OPCODE_PREFETCHU OPCODE_SHFL OPCODE_SHF
 %token<text> OPCODE_MMA
+%token<text> OPCODE_FENCE
 
 %token<value> PREPROCESSOR_INCLUDE PREPROCESSOR_DEFINE PREPROCESSOR_IF 
 %token<value> PREPROCESSOR_IFDEF PREPROCESSOR_ELSE PREPROCESSOR_ENDIF 
@@ -84,6 +85,7 @@
 %token<value> TOKEN_CONST TOKEN_GLOBAL TOKEN_LOCAL TOKEN_PARAM TOKEN_PRAGMA TOKEN_PTR
 %token<value> TOKEN_REG TOKEN_SHARED TOKEN_SHARED_CTA TOKEN_TEXREF TOKEN_CTA TOKEN_SURFREF
 %token<value> TOKEN_GL TOKEN_SYS TOKEN_SAMPLERREF
+%token<value> TOKEN_GPU TOKEN_SC TOKEN_ACQ_REL TOKEN_ACQUIRE TOKEN_RELEASE TOKEN_RELAXED
 
 %token<value> TOKEN_U32 TOKEN_S32 TOKEN_S8 TOKEN_S16 TOKEN_S64 TOKEN_U8 
 %token<value> TOKEN_U16 TOKEN_U64 TOKEN_B8 TOKEN_B16 TOKEN_B32 TOKEN_B64 
@@ -687,7 +689,7 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_BRKPT | OPCODE_SUBC | OPCODE_TEX | OPCODE_LD | OPCODE_LDU
 	| OPCODE_BARSYNC | OPCODE_SULD | OPCODE_TXQ | OPCODE_SUST | OPCODE_SURED 
 	| OPCODE_SUQ | OPCODE_SZEXT | OPCODE_ATOM | OPCODE_RED | OPCODE_NOT | OPCODE_CNOT
-	| OPCODE_VOTE | OPCODE_SHR | OPCODE_SHL | OPCODE_MEMBAR | OPCODE_FMA
+	| OPCODE_VOTE | OPCODE_SHR | OPCODE_SHL | OPCODE_MEMBAR | OPCODE_FENCE | OPCODE_FMA
 	| OPCODE_PMEVENT | OPCODE_POPC | OPCODE_CLZ | OPCODE_BFIND | OPCODE_BREV
 	| OPCODE_BFI | OPCODE_BMSK | OPCODE_FNS | OPCODE_TANH | OPCODE_TESTP | OPCODE_TLD4
 	| OPCODE_PREFETCH | OPCODE_PREFETCHU;
@@ -873,7 +875,7 @@ optionalFloatRounding : floatRounding | /* empty string */;
 instruction : ftzInstruction2 | ftzInstruction3 | approxInstruction2 
 	| basicInstruction3 | bfe | bfi | bfind | bmsk | brev | branch | addOrSub
 	| addCOrSubC | atom | bar | brkpt | clz | cvt | cvta | isspacep | div | dp2a | dp4a | exit
-	| fns | ld | ldu | lop3 | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
+	| fence | fns | ld | ldu | lop3 | mad | mad24 | madc | mma | membar | mov | mul24 | mul | notInstruction
 	| pmevent | popc | prefetch | prefetchu | prmt | rcpSqrtInstruction | red
 	| ret | sad | selp | set | setp | slct | st | suld | suq | sured | sust | szext
 	| testp | tex | tld4 | trap | txq | vote | shfl | shf;
@@ -1087,16 +1089,32 @@ atomModifier: /* empty string */
 	state.addressSpace(TOKEN_GLOBAL);
 }
 
-atom : OPCODE_ATOM atomModifier atomicOperation dataType operand ',' '[' 
+atomicSemantics : TOKEN_RELAXED { state.semantics( $<value>1 ); }
+	| TOKEN_ACQUIRE { state.semantics( $<value>1 ); }
+	| TOKEN_RELEASE { state.semantics( $<value>1 ); }
+	| TOKEN_ACQ_REL { state.semantics( $<value>1 ); }
+	;
+
+optionalAtomicSemantics : atomicSemantics
+	| /* empty */ { state.semantics( TOKEN_RELAXED ); }
+	;
+
+atomicScope : fenceScopeType { state.scope( $<value>1 ); };
+
+optionalAtomicScope : atomicScope | /* empty */;
+
+atom : OPCODE_ATOM optionalAtomicSemantics optionalAtomicScope atomModifier
+	atomicOperation dataType operand ',' '['
 	memoryOperand ']' ',' operand ';'
 {
-	state.instruction( $<text>1, $<value>4 );
+	state.instruction( $<text>1, $<value>6 );
 };
 
-atom : OPCODE_ATOM atomModifier atomicOperation dataType operand ',' '[' 
+atom : OPCODE_ATOM optionalAtomicSemantics optionalAtomicScope atomModifier
+	atomicOperation dataType operand ',' '['
 	memoryOperand ']' ',' operand ',' operand ';'
 {
-	state.instruction( $<text>1, $<value>4 );
+	state.instruction( $<text>1, $<value>6 );
 };
 
 shiftAmount : TOKEN_SHIFT_AMOUNT
@@ -1365,6 +1383,27 @@ membar : OPCODE_MEMBAR membarSpace ';'
 	state.instruction( $<text>1 );
 };
 
+fenceSemanticsType : TOKEN_SC | TOKEN_ACQ_REL | TOKEN_ACQUIRE | TOKEN_RELEASE;
+
+fenceSemantics : fenceSemanticsType
+{
+	state.semantics( $<value>1 );
+};
+
+optionalFenceSemantics : fenceSemantics | /* empty */;
+
+fenceScopeType : TOKEN_CTA | TOKEN_GPU | TOKEN_SYS;
+
+fenceScope : fenceScopeType
+{
+	state.level( $<value>1 );
+};
+
+fence : OPCODE_FENCE optionalFenceSemantics fenceScope ';'
+{
+	state.instruction( $<text>1 );
+};
+
 movIndexedOperand : identifier '[' TOKEN_DECIMAL_CONSTANT ']'
 {
 	state.indexedOperand( $<text>1, @1, $<value>3 );
@@ -1481,10 +1520,19 @@ reductionOperation : reductionOperationId
 	state.reduction( $<value>1 );
 };
 
-red : OPCODE_RED addressSpace reductionOperation dataType operand ',' 
+reductionSemantics : TOKEN_RELAXED { state.semantics( $<value>1 ); }
+	| TOKEN_RELEASE { state.semantics( $<value>1 ); }
+	;
+
+optionalReductionSemantics : reductionSemantics
+	| /* empty */ { state.semantics( TOKEN_RELAXED ); }
+	;
+
+red : OPCODE_RED optionalReductionSemantics optionalAtomicScope addressSpace
+	reductionOperation dataType operand ','
 	operand ';'
 {
-	state.instruction( $<text>1, $<value>4 );
+	state.instruction( $<text>1, $<value>6 );
 };
 
 ret : OPCODE_RET optionalUni ';'

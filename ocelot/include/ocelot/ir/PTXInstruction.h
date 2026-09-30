@@ -22,6 +22,15 @@ namespace ir {
 			Level_Invalid
 		};
 
+		enum Semantics {
+			Sc,
+			AcqRel,
+			Acquire,
+			Release,
+			Relaxed,
+			Semantics_Invalid
+		};
+
 		/*!	List of opcodes for PTX instructions */
 		enum Opcode {
 			Abs = 0,
@@ -62,6 +71,7 @@ namespace ir {
 			Mma,
 			Max,
 			Membar,
+			Fence,
 			Min,
 			Mov,
 			Mul24,
@@ -364,6 +374,7 @@ namespace ir {
 		
 	public:
 		static std::string toString( Level );
+		static std::string toString( Semantics );
 		static std::string toString( CacheLevel cache );
 		static std::string toStringLoad( CacheOperation op );
 		static std::string toStringStore( CacheOperation op );
@@ -466,7 +477,7 @@ namespace ir {
 			
 			/*! For membar, the visibility level in the thread hierarchy */
 			Level level;
-			
+
 			/*! Shift amount flag for bfind instructions */
 			bool shiftAmount;
 			
@@ -493,6 +504,20 @@ namespace ir {
 			
 		};
 		
+		/*! For fence, the memory ordering semantics -- deliberately outside the
+			level/shuffleMode/etc. union above: fence needs both a semantics
+			AND a level (scope) simultaneously, unlike the other union members
+			which are each only ever used by instructions with no need for
+			the others at the same time. */
+		Semantics semantics;
+
+		/*! For atom/red, the optional memory-ordering scope (.cta/.gpu/.sys)
+			-- deliberately its own field rather than reusing the level/
+			addressSpace union member above: atom/red already use addressSpace
+			for their .global/.shared qualifier, so writing scope through the
+			shared level union slot would alias and corrupt it. */
+		Level scope;
+
 		/*! For call instructions, indicates a tail call */
 		bool tailCall;
 	

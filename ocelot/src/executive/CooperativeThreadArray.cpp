@@ -779,6 +779,8 @@ void executive::CooperativeThreadArray::execute(int PC) {
 				eval_Max(context, instr); break;
 			case ir::PTXInstruction::Membar:
 				eval_Membar(context, instr); break;
+			case ir::PTXInstruction::Fence:
+				eval_Fence(context, instr); break;
 			case ir::PTXInstruction::Min:
 				eval_Min(context, instr); break;
 			case ir::PTXInstruction::Mov:
@@ -6326,6 +6328,16 @@ void executive::CooperativeThreadArray::eval_Min(CTAContext &context,
 void executive::CooperativeThreadArray::eval_Membar(CTAContext &context, const ir::PTXInstruction &instr) {
 	trace();
 	/*! No need to do anything here. */
+}
+
+/*!
+
+*/
+void executive::CooperativeThreadArray::eval_Fence(CTAContext &context, const ir::PTXInstruction &instr) {
+	trace();
+	/*! No need to do anything here -- see eval_Membar; this simulator executes
+		every instruction to completion for every thread before the next one
+		starts, so there is no reordering for fence to guard against. */
 }
 
 ////////////////////////////////////////////////////////////////////////////////
