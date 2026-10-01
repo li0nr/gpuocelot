@@ -2836,6 +2836,12 @@ std::string ir::PTXInstruction::toString() const {
 			std::string result = guard() + "ld.";
 			if( volatility == Volatile ) {
 				result += "volatile.";
+			} else if( semantics != Weak ) {
+				result += toString( semantics ) + ".";
+				if( scope != Level_Invalid ) {
+					result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
+						+ std::string( "." );
+				}
 			}
 			if( cacheOperation != Ca ) {
 				result += toStringLoad(cacheOperation) + ".";
@@ -3117,6 +3123,12 @@ std::string ir::PTXInstruction::toString() const {
 			std::string result = guard() + "st.";
 			if( volatility == Volatile ) {
 				result += "volatile.";
+			} else if( semantics != Weak ) {
+				result += toString( semantics ) + ".";
+				if( scope != Level_Invalid ) {
+					result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
+						+ std::string( "." );
+				}
 			}
 			if( cacheOperation != Wb ) {
 				result += toStringStore(cacheOperation) + ".";

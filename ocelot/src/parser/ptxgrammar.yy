@@ -1303,10 +1303,28 @@ optionalVolatile : /* empty string */
 	state.volatileFlag( false );
 };
 
-ldModifier : optionalVolatile optionalAddressSpace optionalCacheOperation
+ldOrdering : volatileModifier { state.semantics( TOKEN_WEAK ); }
+	| TOKEN_WEAK { state.semantics( $<value>1 ); state.volatileFlag( false ); }
+	| TOKEN_RELAXED fenceScopeType { state.semantics( $<value>1 );
+		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| TOKEN_ACQUIRE fenceScopeType { state.semantics( $<value>1 );
+		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| /* empty */ { state.semantics( TOKEN_WEAK ); state.volatileFlag( false ); }
+	;
+
+stOrdering : volatileModifier { state.semantics( TOKEN_WEAK ); }
+	| TOKEN_WEAK { state.semantics( $<value>1 ); state.volatileFlag( false ); }
+	| TOKEN_RELAXED fenceScopeType { state.semantics( $<value>1 );
+		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| TOKEN_RELEASE fenceScopeType { state.semantics( $<value>1 );
+		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| /* empty */ { state.semantics( TOKEN_WEAK ); state.volatileFlag( false ); }
+	;
+
+ldModifier : ldOrdering optionalAddressSpace optionalCacheOperation
 	optionalInstructionVectorType;
 
-stModifier : optionalVolatile optionalAddressSpace optionalStoreCacheOperation
+stModifier : stOrdering optionalAddressSpace optionalStoreCacheOperation
 	optionalInstructionVectorType;
 
 ld : OPCODE_LD ldModifier dataType arrayOperand ',' '[' memoryOperand ']' ';'

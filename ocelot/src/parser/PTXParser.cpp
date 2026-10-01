@@ -3081,6 +3081,7 @@ namespace parser
 			case TOKEN_ACQUIRE: return ir::PTXInstruction::Acquire; break;
 			case TOKEN_RELEASE: return ir::PTXInstruction::Release; break;
 			case TOKEN_RELAXED: return ir::PTXInstruction::Relaxed; break;
+			case TOKEN_WEAK: return ir::PTXInstruction::Weak; break;
 			default: break;
 		}
 

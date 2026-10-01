@@ -1824,6 +1824,101 @@ public:
 		return true;
 	}
 
+	// ld/st .weak / .relaxed.scope / .acquire.scope / .release.scope parsing.
+	bool test_LdStOrdering() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_ldst_ordering() {\n"
+			<< "  .reg .f32 b, d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  ld.weak.global.f32 d, [a];\n"
+			<< "  ld.relaxed.gpu.global.f32 d, [a];\n"
+			<< "  ld.acquire.cta.global.f32 d, [a];\n"
+			<< "  ld.global.f32 d, [a];\n"
+			<< "  st.weak.global.f32 [a], b;\n"
+			<< "  st.relaxed.gpu.global.f32 [a], b;\n"
+			<< "  st.release.cta.global.f32 [a], b;\n"
+			<< "  st.global.f32 [a], b;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse ld/st ordering example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::vector<const PTXInstruction*> lds, sts;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns) continue;
+					if (ptxIns->opcode == PTXInstruction::Ld) lds.push_back(ptxIns);
+					if (ptxIns->opcode == PTXInstruction::St) sts.push_back(ptxIns);
+				}
+		if (lds.size() != 4 || sts.size() != 4) {
+			status << "expected 4 ld + 4 st instructions, found "
+				<< lds.size() << " ld, " << sts.size() << " st\n";
+			return false;
+		}
+		if (lds[0]->semantics != PTXInstruction::Weak) {
+			status << "ld.weak: semantics=" << lds[0]->semantics << "\n";
+			return false;
+		}
+		if (lds[1]->semantics != PTXInstruction::Relaxed
+			|| lds[1]->scope != PTXInstruction::GlobalLevel) {
+			status << "ld.relaxed.gpu: semantics=" << lds[1]->semantics
+				<< " scope=" << lds[1]->scope << "\n";
+			return false;
+		}
+		if (lds[2]->semantics != PTXInstruction::Acquire
+			|| lds[2]->scope != PTXInstruction::CtaLevel) {
+			status << "ld.acquire.cta: semantics=" << lds[2]->semantics
+				<< " scope=" << lds[2]->scope << "\n";
+			return false;
+		}
+		if (lds[3]->semantics != PTXInstruction::Weak
+			|| lds[3]->scope != PTXInstruction::Level_Invalid) {
+			status << "ld (no qualifier, should default to weak): semantics="
+				<< lds[3]->semantics << " scope=" << lds[3]->scope << "\n";
+			return false;
+		}
+		if (lds[3]->addressSpace != PTXInstruction::Global) {
+			status << "ld (no qualifier): addressSpace corrupted, got "
+				<< lds[3]->addressSpace << "\n";
+			return false;
+		}
+		if (sts[0]->semantics != PTXInstruction::Weak) {
+			status << "st.weak: semantics=" << sts[0]->semantics << "\n";
+			return false;
+		}
+		if (sts[1]->semantics != PTXInstruction::Relaxed
+			|| sts[1]->scope != PTXInstruction::GlobalLevel) {
+			status << "st.relaxed.gpu: semantics=" << sts[1]->semantics
+				<< " scope=" << sts[1]->scope << "\n";
+			return false;
+		}
+		if (sts[2]->semantics != PTXInstruction::Release
+			|| sts[2]->scope != PTXInstruction::CtaLevel) {
+			status << "st.release.cta: semantics=" << sts[2]->semantics
+				<< " scope=" << sts[2]->scope << "\n";
+			return false;
+		}
+		if (sts[3]->semantics != PTXInstruction::Weak
+			|| sts[3]->scope != PTXInstruction::Level_Invalid) {
+			status << "st (no qualifier, should default to weak): semantics="
+				<< sts[3]->semantics << " scope=" << sts[3]->scope << "\n";
+			return false;
+		}
+		if (sts[3]->addressSpace != PTXInstruction::Global) {
+			status << "st (no qualifier): addressSpace corrupted, got "
+				<< sts[3]->addressSpace << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
 	// Covers the atom/red type/operation table (PTX ISA Table 35/36) after
 	// correcting f32 min/max, and/or/xor bitness, and inc/dec typing.
 	bool test_AtomicRedTypeTable() {
@@ -9118,6 +9213,7 @@ public:
 			result = (result && test_Red());
 			result = (result && test_Fence());
 			result = (result && test_AtomicRedSemantics());
+			result = (result && test_LdStOrdering());
 			result = (result && test_AtomicRedTypeTable());
 
 			// arithmetic instructions

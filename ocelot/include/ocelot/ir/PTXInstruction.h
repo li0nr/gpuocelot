@@ -28,6 +28,7 @@ namespace ir {
 			Acquire,
 			Release,
 			Relaxed,
+			Weak,
 			Semantics_Invalid
 		};
 
