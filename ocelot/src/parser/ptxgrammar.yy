@@ -86,6 +86,7 @@
 %token<value> TOKEN_REG TOKEN_SHARED TOKEN_SHARED_CTA TOKEN_TEXREF TOKEN_CTA TOKEN_SURFREF
 %token<value> TOKEN_GL TOKEN_SYS TOKEN_SAMPLERREF
 %token<value> TOKEN_GPU TOKEN_SC TOKEN_ACQ_REL TOKEN_ACQUIRE TOKEN_RELEASE TOKEN_RELAXED
+%token<value> TOKEN_MMIO
 
 %token<value> TOKEN_U32 TOKEN_S32 TOKEN_S8 TOKEN_S16 TOKEN_S64 TOKEN_U8 
 %token<value> TOKEN_U16 TOKEN_U64 TOKEN_B8 TOKEN_B16 TOKEN_B32 TOKEN_B64 
@@ -1303,12 +1304,22 @@ optionalVolatile : /* empty string */
 	state.volatileFlag( false );
 };
 
+mmioLdSemantics : TOKEN_ACQUIRE { state.semantics( $<value>1 ); }
+	| TOKEN_RELAXED { state.semantics( $<value>1 ); }
+	;
+
+mmioStSemantics : TOKEN_RELAXED { state.semantics( $<value>1 ); }
+	| TOKEN_RELEASE { state.semantics( $<value>1 ); }
+	;
+
 ldOrdering : volatileModifier { state.semantics( TOKEN_WEAK ); }
 	| TOKEN_WEAK { state.semantics( $<value>1 ); state.volatileFlag( false ); }
 	| TOKEN_RELAXED fenceScopeType { state.semantics( $<value>1 );
 		state.scope( $<value>2 ); state.volatileFlag( false ); }
 	| TOKEN_ACQUIRE fenceScopeType { state.semantics( $<value>1 );
 		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| TOKEN_MMIO mmioLdSemantics TOKEN_SYS { state.mmio( true );
+		state.scope( $<value>3 ); state.volatileFlag( false ); }
 	| /* empty */ { state.semantics( TOKEN_WEAK ); state.volatileFlag( false ); }
 	;
 
@@ -1318,14 +1329,16 @@ stOrdering : volatileModifier { state.semantics( TOKEN_WEAK ); }
 		state.scope( $<value>2 ); state.volatileFlag( false ); }
 	| TOKEN_RELEASE fenceScopeType { state.semantics( $<value>1 );
 		state.scope( $<value>2 ); state.volatileFlag( false ); }
+	| TOKEN_MMIO mmioStSemantics TOKEN_SYS { state.mmio( true );
+		state.scope( $<value>3 ); state.volatileFlag( false ); }
 	| /* empty */ { state.semantics( TOKEN_WEAK ); state.volatileFlag( false ); }
 	;
 
 ldModifier : ldOrdering optionalAddressSpace optionalCacheOperation
-	optionalInstructionVectorType;
+	optionalInstructionVectorType { state.finalizeMmioAddressSpace(); };
 
 stModifier : stOrdering optionalAddressSpace optionalStoreCacheOperation
-	optionalInstructionVectorType;
+	optionalInstructionVectorType { state.finalizeMmioAddressSpace(); };
 
 ld : OPCODE_LD ldModifier dataType arrayOperand ',' '[' memoryOperand ']' ';'
 {

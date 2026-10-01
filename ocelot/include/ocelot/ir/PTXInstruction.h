@@ -521,6 +521,14 @@ namespace ir {
 
 		/*! For call instructions, indicates a tail call */
 		bool tailCall;
+
+		/*! For ld/st, indicates the .mmio memory-mapped-I/O form
+			(always .sem.sys{.global}) -- deliberately a standalone flag
+			rather than inferred from semantics/scope alone: a plain
+			ld.acquire.sys and ld.mmio.acquire.sys produce the same
+			semantics/scope pair but are syntactically distinct and must
+			round-trip through the printer differently. */
+		bool mmio;
 	
 		/*! If the instruction is predicated, the guard */
 		PTXOperand pg;

@@ -511,6 +511,7 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	cc = 0;
 	addressSpace = AddressSpace_Invalid;
 	tailCall = false;
+	mmio = false;
 	cacheOperation = Ca;
 	booleanOperator = BoolAnd;
 	semantics = AcqRel;
@@ -2837,6 +2838,9 @@ std::string ir::PTXInstruction::toString() const {
 			if( volatility == Volatile ) {
 				result += "volatile.";
 			} else if( semantics != Weak ) {
+				if( mmio ) {
+					result += "mmio.";
+				}
 				result += toString( semantics ) + ".";
 				if( scope != Level_Invalid ) {
 					result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
@@ -3124,6 +3128,9 @@ std::string ir::PTXInstruction::toString() const {
 			if( volatility == Volatile ) {
 				result += "volatile.";
 			} else if( semantics != Weak ) {
+				if( mmio ) {
+					result += "mmio.";
+				}
 				result += toString( semantics ) + ".";
 				if( scope != Level_Invalid ) {
 					result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )

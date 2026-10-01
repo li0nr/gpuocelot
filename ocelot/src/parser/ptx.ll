@@ -342,6 +342,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".acquire"                      { yylval->value = TOKEN_ACQUIRE; return TOKEN_ACQUIRE; }
 ".release"                      { yylval->value = TOKEN_RELEASE; return TOKEN_RELEASE; }
 ".relaxed"                      { yylval->value = TOKEN_RELAXED; return TOKEN_RELAXED; }
+".mmio"                         { yylval->value = TOKEN_MMIO; return TOKEN_MMIO; }
 
 "sm_10"                         { yylval->value = TOKEN_SM10; 
                                     return TOKEN_SM10; }

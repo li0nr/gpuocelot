@@ -1880,7 +1880,20 @@ namespace parser
 	{
 		statement.instruction.scope = tokenToLevel( token );
 	}
-	
+
+	void PTXParser::State::mmio( bool condition )
+	{
+		statement.instruction.mmio = condition;
+	}
+
+	void PTXParser::State::finalizeMmioAddressSpace()
+	{
+		if( statement.instruction.mmio )
+		{
+			statement.instruction.addressSpace = ir::PTXInstruction::Global;
+		}
+	}
+
 	void PTXParser::State::permute( int token )
 	{
 		statement.instruction.permuteMode = tokenToPermuteMode( token );

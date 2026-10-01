@@ -1919,6 +1919,86 @@ public:
 		return true;
 	}
 
+	bool test_LdStMmio() {
+		std::stringstream ptx;
+		ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+			<< ".visible .entry test_ldst_mmio() {\n"
+			<< "  .reg .f32 b, d;\n"
+			<< "  .reg .u64 a;\n"
+			<< "  ld.mmio.acquire.sys.global.f32 d, [a];\n"
+			<< "  ld.mmio.relaxed.sys.f32 d, [a];\n"
+			<< "  st.mmio.relaxed.sys.global.f32 [a], b;\n"
+			<< "  st.mmio.release.sys.f32 [a], b;\n"
+			<< "  ret;\n}\n";
+		Module parsed;
+		try { parsed.load(ptx); }
+		catch (const std::exception& error) {
+			status << "failed to parse ld/st mmio example: "
+				<< error.what() << "\n";
+			return false;
+		}
+		std::vector<const PTXInstruction*> lds, sts;
+		for (auto kernel = parsed.kernels().begin(); kernel != parsed.kernels().end(); ++kernel)
+			for (auto block = kernel->second->cfg()->begin(); block != kernel->second->cfg()->end(); ++block)
+				for (auto instruction = block->instructions.begin(); instruction != block->instructions.end(); ++instruction) {
+					const PTXInstruction* ptxIns = dynamic_cast<const PTXInstruction*>(*instruction);
+					if (!ptxIns) continue;
+					if (ptxIns->opcode == PTXInstruction::Ld) lds.push_back(ptxIns);
+					if (ptxIns->opcode == PTXInstruction::St) sts.push_back(ptxIns);
+				}
+		if (lds.size() != 2 || sts.size() != 2) {
+			status << "expected 2 ld + 2 st instructions, found "
+				<< lds.size() << " ld, " << sts.size() << " st\n";
+			return false;
+		}
+		if (!lds[0]->mmio || lds[0]->semantics != PTXInstruction::Acquire
+			|| lds[0]->scope != PTXInstruction::SystemLevel
+			|| lds[0]->addressSpace != PTXInstruction::Global) {
+			status << "ld.mmio.acquire.sys.global: mmio=" << lds[0]->mmio
+				<< " semantics=" << lds[0]->semantics
+				<< " scope=" << lds[0]->scope
+				<< " addressSpace=" << lds[0]->addressSpace << "\n";
+			return false;
+		}
+		if (!lds[1]->mmio || lds[1]->semantics != PTXInstruction::Relaxed
+			|| lds[1]->scope != PTXInstruction::SystemLevel
+			|| lds[1]->addressSpace != PTXInstruction::Global) {
+			status << "ld.mmio.relaxed.sys (no .global): mmio=" << lds[1]->mmio
+				<< " semantics=" << lds[1]->semantics
+				<< " scope=" << lds[1]->scope
+				<< " addressSpace=" << lds[1]->addressSpace << "\n";
+			return false;
+		}
+		if (!sts[0]->mmio || sts[0]->semantics != PTXInstruction::Relaxed
+			|| sts[0]->scope != PTXInstruction::SystemLevel
+			|| sts[0]->addressSpace != PTXInstruction::Global) {
+			status << "st.mmio.relaxed.sys.global: mmio=" << sts[0]->mmio
+				<< " semantics=" << sts[0]->semantics
+				<< " scope=" << sts[0]->scope
+				<< " addressSpace=" << sts[0]->addressSpace << "\n";
+			return false;
+		}
+		if (!sts[1]->mmio || sts[1]->semantics != PTXInstruction::Release
+			|| sts[1]->scope != PTXInstruction::SystemLevel
+			|| sts[1]->addressSpace != PTXInstruction::Global) {
+			status << "st.mmio.release.sys (no .global): mmio=" << sts[1]->mmio
+				<< " semantics=" << sts[1]->semantics
+				<< " scope=" << sts[1]->scope
+				<< " addressSpace=" << sts[1]->addressSpace << "\n";
+			return false;
+		}
+
+		// Regression guard: .mmio must round-trip through the printer, not
+		// collapse into the already-supported ld.acquire.sys form.
+		std::string printed = lds[0]->toString();
+		if (printed.find("mmio") == std::string::npos) {
+			status << "ld.mmio toString() lost the mmio marker: " << printed << "\n";
+			return false;
+		}
+
+		return true;
+	}
+
 	// Covers the atom/red type/operation table (PTX ISA Table 35/36) after
 	// correcting f32 min/max, and/or/xor bitness, and inc/dec typing.
 	bool test_AtomicRedTypeTable() {
@@ -9214,6 +9294,7 @@ public:
 			result = (result && test_Fence());
 			result = (result && test_AtomicRedSemantics());
 			result = (result && test_LdStOrdering());
+			result = (result && test_LdStMmio());
 			result = (result && test_AtomicRedTypeTable());
 
 			// arithmetic instructions

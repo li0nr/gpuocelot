@@ -263,6 +263,8 @@ namespace parser
 					void level( int token );
 					void semantics( int token );
 					void scope( int token );
+					void mmio( bool condition );
+					void finalizeMmioAddressSpace();
 					void permute( int token );
 					void floatingPointMode( int token );
 					void defaultPermute();
