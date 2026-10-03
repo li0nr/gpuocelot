@@ -98,7 +98,7 @@
 %token<value> TOKEN_GTU TOKEN_GEU TOKEN_NUM TOKEN_NAN
 
 %token<value> TOKEN_HI TOKEN_LO TOKEN_AND TOKEN_OR TOKEN_XOR
-%token<value> TOKEN_RN TOKEN_RNA TOKEN_RM TOKEN_RZ TOKEN_RP TOKEN_SAT TOKEN_VOLATILE
+%token<value> TOKEN_RN TOKEN_RNA TOKEN_RM TOKEN_RZ TOKEN_RP TOKEN_SAT TOKEN_SATFINITE TOKEN_VOLATILE
 %token<value> TOKEN_TAIL TOKEN_UNI TOKEN_ALIGN TOKEN_BYTE TOKEN_WIDE TOKEN_CARRY
 %token<value> TOKEN_RNI TOKEN_RMI TOKEN_RZI TOKEN_RPI
 %token<value> TOKEN_FTZ TOKEN_APPROX TOKEN_FULL TOKEN_SHIFT_AMOUNT
@@ -143,7 +143,7 @@
 %token<value> TOKEN_FINITE TOKEN_INFINITE TOKEN_NUMBER TOKEN_NOT_A_NUMBER
 %token<value> TOKEN_NORMAL TOKEN_SUBNORMAL
 
-%type<value> mmaShape mmaAccumulatorTypeId mmaInputTypeId
+%type<value> mmaShape mmaAccumulatorTypeId mmaInputTypeId mmaIntTypeId
 
 %token<value> TOKEN_DECIMAL_CONSTANT
 
@@ -702,11 +702,26 @@ mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
 	state.mma( $<value>4, $<value>7, $<value>8, $<value>9, $<value>10 );
 };
 
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
+	optionalSatfinite TOKEN_S32 mmaIntTypeId mmaIntTypeId TOKEN_S32
+	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
+{
+	state.mma( $<value>4, $<value>8, $<value>9, $<value>10, $<value>11 );
+};
+
 mmaShape : TOKEN_M16N8K8 | TOKEN_M16N8K16;
 
 mmaAccumulatorTypeId : TOKEN_F16 | TOKEN_F32;
 
 mmaInputTypeId : TOKEN_F16 | TOKEN_BF16 | TOKEN_TF32;
+
+mmaIntTypeId : TOKEN_S8 | TOKEN_U8;
+
+optionalSatfinite : TOKEN_SATFINITE
+{
+	state.modifier( $<value>1 );
+}
+| /* empty string */;
 
 uninitializableDeclaration : uninitializable addressableVariablePrefix 
 	identifier arrayDimensions ';'

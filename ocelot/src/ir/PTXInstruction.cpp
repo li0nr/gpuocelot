@@ -1446,6 +1446,58 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Mma: {
+			const bool intInput = a.type == PTXOperand::s8 ||
+				a.type == PTXOperand::u8;
+			if (intInput) {
+				if (mmaShape != MmaM16N8K16) {
+					return "integer mma requires m16n8k16";
+				}
+				if (type != PTXOperand::s32) {
+					return "integer mma requires s32 accumulators";
+				}
+				if (b.type != PTXOperand::s8 && b.type != PTXOperand::u8) {
+					return "integer mma B type must be s8 or u8";
+				}
+				if (d.type != PTXOperand::s32 || c.type != PTXOperand::s32) {
+					return "integer mma C and D types must be s32";
+				}
+				if (d.vec != PTXOperand::v4 || c.vec != PTXOperand::v4 ||
+					a.vec != PTXOperand::v2 || b.vec != PTXOperand::v1) {
+					return "integer mma.m16n8k16 has invalid fragment sizes";
+				}
+				if (d.array.size() != 4 || c.array.size() != 4 ||
+					a.array.size() != 2 || b.array.size() != 1) {
+					return "integer mma.m16n8k16 has invalid fragment "
+						"register counts";
+				}
+				for (PTXOperand::Array::const_iterator element = a.array.begin();
+					element != a.array.end(); ++element) {
+					if (element->type != PTXOperand::b32) {
+						return "mma A fragment registers must be 32-bit "
+							"packed values";
+					}
+				}
+				for (PTXOperand::Array::const_iterator element = b.array.begin();
+					element != b.array.end(); ++element) {
+					if (element->type != PTXOperand::b32) {
+						return "mma B fragment registers must be 32-bit "
+							"packed values";
+					}
+				}
+				for (PTXOperand::Array::const_iterator element = c.array.begin();
+					element != c.array.end(); ++element) {
+					if (!PTXOperand::relaxedValid(PTXOperand::s32, element->type)) {
+						return "mma C fragment registers must be s32 or b32";
+					}
+				}
+				for (PTXOperand::Array::const_iterator element = d.array.begin();
+					element != d.array.end(); ++element) {
+					if (!PTXOperand::relaxedValid(PTXOperand::s32, element->type)) {
+						return "mma D fragment registers must be s32 or b32";
+					}
+				}
+				break;
+			}
 			const bool m16n8k8 = mmaShape == MmaM16N8K8;
 			const bool tf32Input = a.type == PTXOperand::tf32;
 			const bool halfAccumulator = type == PTXOperand::f16;
@@ -2905,6 +2957,7 @@ std::string ir::PTXInstruction::toString() const {
 				"mma.sync.aligned.m" +
 				(m16n8k8 ? "16n8k8" : "16n8k16") +
 				".row.col." +
+				((modifier & satfinite) ? "satfinite." : "") +
 				PTXOperand::toString(type) + "." +
 				PTXOperand::toString(a.type) + "." +
 				PTXOperand::toString(b.type) + "." +

@@ -160,6 +160,7 @@ namespace ir {
 			abs = 262144,	//< compare absolute input values
 			relu = 524288,	//< clamp negative floating-point results to zero
 			rna = 1048576,	//< round to nearest, ties away from zero
+			satfinite = 2097152,	//< clamp integer mma result to representable range
 			Modifier_invalid = 0
 		};
 			

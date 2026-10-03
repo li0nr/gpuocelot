@@ -428,6 +428,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".rmi"                          { yylval->value = TOKEN_RMI; return TOKEN_RMI; }
 ".rzi"                          { yylval->value = TOKEN_RZI; return TOKEN_RZI; }
 ".rpi"                          { yylval->value = TOKEN_RPI; return TOKEN_RPI; }
+".satfinite"                    { yylval->value = TOKEN_SATFINITE; return TOKEN_SATFINITE; }
 ".sat"                          { yylval->value = TOKEN_SAT; return TOKEN_SAT; }
 ".ftz"                          { yylval->value = TOKEN_FTZ; return TOKEN_FTZ; }
 ".relu"                         { yylval->value = TOKEN_RELU; return TOKEN_RELU; }

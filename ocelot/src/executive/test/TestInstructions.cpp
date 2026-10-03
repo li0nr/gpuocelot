@@ -5336,6 +5336,138 @@ public:
 		return true;
 	}
 
+	// mma.m16n8k16.s32.s8/u8.s8/u8.s32: integer dot-product mma, PTX ISA 8.0
+	// sec 9.7.15.5.9. Each case uses a constant-valued A/B fragment so the
+	// expected accumulation (C + 16 * aVal * bVal) is a closed form -- still
+	// exercises the real 16-term k-loop and the per-lane fragment layout.
+	bool test_MmaInt8() {
+		auto vector = [this](PTXOperand::DataType type,
+			PTXOperand::DataType elementType, PTXOperand::Vec vec,
+			int firstRegister, int count) {
+			PTXOperand operand;
+			operand.addressMode = PTXOperand::Register;
+			operand.type = type;
+			operand.vec = vec;
+			for(int i = 0; i < count; ++i) {
+				operand.array.push_back(reg("mma", elementType,
+					(PTXOperand::RegisterType)(firstRegister + i)));
+			}
+			return operand;
+		};
+
+		auto runCase = [&](PTXOperand::DataType aType, PTXOperand::DataType bType,
+			int aVal, int bVal, PTXS32 cVal, bool satfinite,
+			PTXS32 expected, const char *label, bool varyC = true) -> bool {
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Mma;
+			ins.mmaShape = PTXInstruction::MmaM16N8K16;
+			ins.type = PTXOperand::s32;
+			ins.modifier = satfinite ? PTXInstruction::satfinite
+				: PTXInstruction::Modifier_invalid;
+
+			ins.d = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 0, 4);
+			ins.c = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 6, 4);
+			ins.a = vector(aType, PTXOperand::b32, PTXOperand::v2, 0, 2);
+			ins.b = vector(bType, PTXOperand::b32, PTXOperand::v1, 4, 1);
+
+			if (ins.valid() != "") {
+				status << label << ": instruction rejected as invalid: "
+					<< ins.valid() << "\n";
+				return false;
+			}
+
+			const PTXU32 aByte = static_cast<PTXU32>(aVal) & 0xffu;
+			const PTXU32 bByte = static_cast<PTXU32>(bVal) & 0xffu;
+			const PTXU32 aPacked = aByte | (aByte << 8) | (aByte << 16) | (aByte << 24);
+			const PTXU32 bPacked = bByte | (bByte << 8) | (bByte << 16) | (bByte << 24);
+
+			cta->reset();
+			for (int thread = 0; thread < threadCount; ++thread) {
+				cta->setRegAsB32(thread, 0, aPacked);
+				cta->setRegAsB32(thread, 1, aPacked);
+				cta->setRegAsB32(thread, 4, bPacked);
+				const int lane = thread & 31;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				for (int i = 0; i < 4; ++i) {
+					const int row = groupID + (i >= 2 ? 8 : 0);
+					const int col = threadInGroup * 2 + (i & 1);
+					cta->setRegAsS32(thread, 6 + i,
+						varyC ? cVal + row * 8 + col : cVal);
+				}
+			}
+
+			cta->eval_Mma(cta->getActiveContext(), ins);
+
+			for (int thread = 0; thread < threadCount; ++thread) {
+				const int lane = thread & 31;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				for (int i = 0; i < 4; ++i) {
+					const int row = groupID + (i >= 2 ? 8 : 0);
+					const int col = threadInGroup * 2 + (i & 1);
+					const PTXS32 got = cta->getRegAsS32(thread, i);
+					const PTXS32 want = varyC ? expected + row * 8 + col
+						: expected;
+					if (got != want) {
+						status << label << " incorrect [" << thread
+							<< "]: got " << got << " want " << want << "\n";
+						return false;
+					}
+				}
+			}
+			return true;
+		};
+
+		// s8 x s8: -3 * 5 * 16 terms = -240.
+		if (!runCase(PTXOperand::s8, PTXOperand::s8, -3, 5, 0, false,
+			-240, "mma s8xs8")) return false;
+
+		// u8 x u8: byte 200 means 200 unsigned, -56 if wrongly sign-extended.
+		// 200 * 200 * 16 = 640000.
+		if (!runCase(PTXOperand::u8, PTXOperand::u8, 200, 200, 0, false,
+			640000, "mma u8xu8")) return false;
+
+		// mixed s8 x u8: -3 (signed) * 200 (unsigned) * 16 = -9600.
+		if (!runCase(PTXOperand::s8, PTXOperand::u8, -3, 200, 0, false,
+			-9600, "mma s8xu8")) return false;
+
+		// satfinite: large positive C plus a large positive product overflows
+		// s32 and must clamp to INT32_MAX rather than wrap.
+		if (!runCase(PTXOperand::s8, PTXOperand::s8, 127, 127,
+			(std::numeric_limits<PTXS32>::max)() - 100, true,
+			(std::numeric_limits<PTXS32>::max)(), "mma satfinite positive",
+			false))
+			return false;
+
+		// satfinite: large negative C plus a large negative product
+		// underflows s32 and must clamp to INT32_MIN.
+		if (!runCase(PTXOperand::s8, PTXOperand::s8, 127, -128,
+			(std::numeric_limits<PTXS32>::min)() + 100, true,
+			(std::numeric_limits<PTXS32>::min)(), "mma satfinite negative",
+			false))
+			return false;
+
+		// Validation: integer mma requires an s32 accumulator, not f32.
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Mma;
+			ins.mmaShape = PTXInstruction::MmaM16N8K16;
+			ins.type = PTXOperand::f32;
+			ins.d = vector(PTXOperand::f32, PTXOperand::f32, PTXOperand::v4, 0, 4);
+			ins.c = vector(PTXOperand::f32, PTXOperand::f32, PTXOperand::v4, 6, 4);
+			ins.a = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v2, 0, 2);
+			ins.b = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v1, 4, 1);
+			if (ins.valid() == "") {
+				status << "mma with s8 inputs and f32 accumulator "
+					"unexpectedly valid\n";
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	bool test_Lg2() {
 		bool result = true;
 		std::stringstream ptx;
@@ -9333,6 +9465,7 @@ public:
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());
 			result = (result && test_Mma());
+			result = (result && test_MmaInt8());
 			result = (result && test_Lg2());
 			result = (result && test_Sqrt());
 			result = (result && test_Rsqrt());

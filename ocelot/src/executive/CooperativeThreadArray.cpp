@@ -5006,6 +5006,98 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 	}
 
 	const ir::PTXOperand::DataType inputType = instr.a.type;
+	const bool intInput = inputType == ir::PTXOperand::s8 ||
+		inputType == ir::PTXOperand::u8;
+
+	if (intInput) {
+		// ponytail: m16n8k16 s8/u8 x s8/u8 -> s32 only; wider shapes/sub-byte
+		// types (m8n8k16, m16n8k32, u4/s4, b1) unimplemented, add if needed.
+		auto signExtend = [](ir::PTXU32 reg, unsigned int byteIndex,
+			ir::PTXOperand::DataType type) -> ir::PTXS32 {
+			const ir::PTXU32 field = (reg >> (byteIndex * 8)) & 0xffu;
+			if (type == ir::PTXOperand::s8 && (field & 0x80u)) {
+				return static_cast<ir::PTXS32>(field) - 256;
+			}
+			return static_cast<ir::PTXS32>(field);
+		};
+
+		for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
+			int participants = 0;
+			for (int lane = 0; lane < 32; ++lane) {
+				if (context.predicated(warpStart + lane, instr)) {
+					++participants;
+				}
+			}
+			if (participants == 0) continue;
+			if (participants != 32) {
+				throw RuntimeException("mma requires all warp lanes to participate",
+					context.PC, instr);
+			}
+
+			ir::PTXS32 A[16][16] = {};
+			ir::PTXS32 B[16][8] = {};
+			ir::PTXS32 C[16][8] = {};
+
+			for (int lane = 0; lane < 32; ++lane) {
+				int threadID = warpStart + lane;
+				int groupID = lane >> 2;
+				int threadInGroup = lane & 3;
+
+				for (int i = 0; i < 8; ++i) {
+					int row = (i < 4) ? groupID : groupID + 8;
+					int col = threadInGroup * 4 + (i & 3);
+					ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
+					A[row][col] = signExtend(reg, i & 3, instr.a.type);
+				}
+
+				for (int i = 0; i < 4; ++i) {
+					int row = threadInGroup * 4 + i;
+					int col = groupID;
+					ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[0]);
+					B[row][col] = signExtend(reg, i, instr.b.type);
+				}
+
+				for (int i = 0; i < 4; ++i) {
+					int row = groupID + (i >= 2 ? 8 : 0);
+					int col = threadInGroup * 2 + (i & 1);
+					C[row][col] = operandAsS32(threadID, instr.c.array[i]);
+				}
+			}
+
+			ir::PTXS32 D[16][8];
+			for (int row = 0; row < 16; ++row) {
+				for (int col = 0; col < 8; ++col) {
+					int64_t acc = C[row][col];
+					for (int k = 0; k < 16; ++k) {
+						acc += static_cast<int64_t>(A[row][k]) *
+							static_cast<int64_t>(B[k][col]);
+					}
+					if (instr.modifier & ir::PTXInstruction::satfinite) {
+						const int64_t upper =
+							(std::numeric_limits<ir::PTXS32>::max)();
+						const int64_t lower =
+							(std::numeric_limits<ir::PTXS32>::min)();
+						if (acc > upper) acc = upper;
+						else if (acc < lower) acc = lower;
+					}
+					D[row][col] = static_cast<ir::PTXS32>(acc);
+				}
+			}
+
+			for (int lane = 0; lane < 32; ++lane) {
+				int threadID = warpStart + lane;
+				int groupID = lane >> 2;
+				int threadInGroup = lane & 3;
+				for (int i = 0; i < 4; ++i) {
+					int row = groupID + (i >= 2 ? 8 : 0);
+					int col = threadInGroup * 2 + (i & 1);
+					setRegAsS32(threadID, instr.d.array[i].reg, D[row][col]);
+				}
+			}
+		}
+		return;
+	}
+
 	const bool halfAccumulator = instr.type == ir::PTXOperand::f16;
 	const bool tf32Input = inputType == ir::PTXOperand::tf32;
 	const bool m16n8k8 = instr.mmaShape == ir::PTXInstruction::MmaM16N8K8;

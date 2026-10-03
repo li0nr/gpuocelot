@@ -2797,6 +2797,7 @@ namespace parser
 			case TOKEN_LO: return ir::PTXInstruction::lo; break;
 			case TOKEN_WIDE: return ir::PTXInstruction::wide; break;
 			case TOKEN_SAT: return ir::PTXInstruction::sat; break;
+			case TOKEN_SATFINITE: return ir::PTXInstruction::satfinite; break;
 			case TOKEN_RNI: return ir::PTXInstruction::rni; break;
 			case TOKEN_RN: return ir::PTXInstruction::rn; break;
 			case TOKEN_RNA: return ir::PTXInstruction::rna; break;
