@@ -5207,9 +5207,50 @@ public:
 		return true;
 	}
 
+	bool test_MmaFloatShapes() {
+		// PTX 8.0: m8n8k16/m16n8k32 are integer-only shapes.
+		for (const char* shape : {"m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32"}) {
+			for (const char* input : {"f16", "bf16", "tf32"}) {
+				for (const char* accumulator : {"f16", "f32"}) {
+					const bool small = std::string(shape) == "m16n8k8";
+					const bool tf32 = std::string(input) == "tf32";
+					const bool half = std::string(accumulator) == "f16";
+					const bool legalShape = small || std::string(shape) == "m16n8k16";
+					const bool legal = legalShape && (!tf32 || small)
+						&& (!half || std::string(input) == "f16");
+					std::stringstream ptx;
+					ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
+						<< ".visible .entry mma_shapes() {\n.reg ."
+						<< (half ? "f16x2" : "b32") << " %d<4>;\n.reg ."
+						<< (tf32 ? "b32" : "f16x2") << " %r<10>;\n"
+						<< ".reg ." << (half ? "f16x2" : "b32") << " %c<4>;\n"
+						<< "mma.sync.aligned." << shape << ".row.col."
+						<< accumulator << "." << input << "." << input << "."
+						<< accumulator << (half ? " {%d0,%d1}, " : " {%d0,%d1,%d2,%d3}, ")
+						<< (small && !tf32 ? "{%r4,%r5}, {%r8}, "
+							: "{%r4,%r5,%r6,%r7}, {%r8,%r9}, ")
+						<< (half ? "{%c0,%c1};\n" : "{%c0,%c1,%c2,%c3};\n")
+						<< "ret;\n}\n";
+					Module parsed;
+					bool accepted = true;
+					try { parsed.load(ptx); }
+					catch (const std::exception&) { accepted = false; }
+					if (accepted != legal) {
+						status << "mma " << shape << " " << input << " -> "
+							<< accumulator << (accepted ? " incorrectly accepted\n"
+								: " incorrectly rejected\n");
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
 	bool test_Mma() {
 		PTXInstruction ins;
 		ins.opcode = PTXInstruction::Mma;
+		ins.mmaShape = PTXInstruction::MmaM16N8K16;
 		ins.type = PTXOperand::f32;
 		ins.modifier = PTXInstruction::rn;
 
@@ -5235,6 +5276,19 @@ public:
 			PTXOperand::v4, 0, 4);
 		ins.b = vector(PTXOperand::f16, PTXOperand::b32,
 			PTXOperand::v2, 4, 2);
+		for (auto& operand : ins.a.array) operand.type = PTXOperand::f16x2;
+		for (auto& operand : ins.b.array) operand.type = PTXOperand::f16x2;
+		if (!ins.valid().empty()) {
+			status << "mma rejected f16x2 input fragments: " << ins.valid() << "\n";
+			return false;
+		}
+		PTXInstruction tf32 = ins;
+		tf32.mmaShape = PTXInstruction::MmaM16N8K8;
+		tf32.a.type = tf32.b.type = PTXOperand::tf32;
+		if (tf32.valid().empty()) {
+			status << "tf32 mma incorrectly accepted f16x2 fragments\n";
+			return false;
+		}
 
 		const PTXU16 f16Values[17] = {
 			0x0000, 0x3c00, 0x4000, 0x4200, 0x4400, 0x4500,
@@ -5460,6 +5514,188 @@ public:
 			ins.b = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v1, 4, 1);
 			if (ins.valid() == "") {
 				status << "mma with s8 inputs and f32 accumulator "
+					"unexpectedly valid\n";
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	// mma.m8n8k16/m16n8k32.s32.s8/u8.s8/u8.s32: the two remaining integer mma
+	// shapes beyond m16n8k16 (PTX ISA 8.0 sec 9.7.15.5.3 / 9.7.15.5.10).
+	// Same closed-form approach as test_MmaInt8: constant-valued A/B
+	// fragments make the expected accumulation (C + k * aVal * bVal) a
+	// closed form while a row/col-varying C still exercises the real
+	// per-lane C/D fragment layout and the shape's k-loop bound.
+	bool test_MmaInt8WideShapes() {
+		auto vector = [this](PTXOperand::DataType type,
+			PTXOperand::DataType elementType, PTXOperand::Vec vec,
+			int firstRegister, int count) {
+			PTXOperand operand;
+			operand.addressMode = PTXOperand::Register;
+			operand.type = type;
+			operand.vec = vec;
+			for(int i = 0; i < count; ++i) {
+				operand.array.push_back(reg("mma", elementType,
+					(PTXOperand::RegisterType)(firstRegister + i)));
+			}
+			return operand;
+		};
+
+		// cdRowCol: m8n8k16 has a 8x8 C/D with 2 registers per lane;
+		// m16n8k16/m16n8k32 share the same 16x8 C/D with 4 registers per
+		// lane -- reuse that mapping for m16n8k32 directly.
+		auto runCase = [&](PTXInstruction::MmaShape shape, int k,
+			PTXOperand::Vec aVec, int aCount, PTXOperand::Vec bVec, int bCount,
+			PTXOperand::Vec cdVec, int cdCount,
+			auto cdRowCol,
+			PTXOperand::DataType aType, PTXOperand::DataType bType,
+			int aVal, int bVal, PTXS32 cVal, bool satfinite,
+			PTXS32 expected, const char *label, bool varyC = true) -> bool {
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Mma;
+			ins.mmaShape = shape;
+			ins.type = PTXOperand::s32;
+			ins.modifier = satfinite ? PTXInstruction::satfinite
+				: PTXInstruction::Modifier_invalid;
+
+			// Register numbering mirrors test_MmaInt8: D and A share the
+			// low registers (A is fully read into local matrices before D
+			// is written, so reuse is safe), keeping everything within the
+			// small register file the embedded test kernel declares.
+			ins.d = vector(PTXOperand::s32, PTXOperand::s32, cdVec, 0, cdCount);
+			ins.a = vector(aType, PTXOperand::b32, aVec, 0, aCount);
+			ins.b = vector(bType, PTXOperand::b32, bVec, 4, bCount);
+			ins.c = vector(PTXOperand::s32, PTXOperand::s32, cdVec, 6, cdCount);
+
+			if (ins.valid() != "") {
+				status << label << ": instruction rejected as invalid: "
+					<< ins.valid() << "\n";
+				return false;
+			}
+
+			const PTXU32 aByte = static_cast<PTXU32>(aVal) & 0xffu;
+			const PTXU32 bByte = static_cast<PTXU32>(bVal) & 0xffu;
+			const PTXU32 aPacked = aByte | (aByte << 8) | (aByte << 16) | (aByte << 24);
+			const PTXU32 bPacked = bByte | (bByte << 8) | (bByte << 16) | (bByte << 24);
+
+			cta->reset();
+			for (int thread = 0; thread < threadCount; ++thread) {
+				for (int i = 0; i < aCount; ++i) {
+					cta->setRegAsB32(thread, i, aPacked);
+				}
+				for (int i = 0; i < bCount; ++i) {
+					cta->setRegAsB32(thread, 4 + i, bPacked);
+				}
+				const int lane = thread & 31;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				for (int i = 0; i < cdCount; ++i) {
+					int row, col;
+					cdRowCol(groupID, threadInGroup, i, row, col);
+					cta->setRegAsS32(thread, 6 + i,
+						varyC ? cVal + row * 8 + col : cVal);
+				}
+			}
+
+			cta->eval_Mma(cta->getActiveContext(), ins);
+
+			for (int thread = 0; thread < threadCount; ++thread) {
+				const int lane = thread & 31;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				for (int i = 0; i < cdCount; ++i) {
+					int row, col;
+					cdRowCol(groupID, threadInGroup, i, row, col);
+					const PTXS32 got = cta->getRegAsS32(thread, i);
+					const PTXS32 want = varyC ? expected + row * 8 + col
+						: expected;
+					if (got != want) {
+						status << label << " incorrect [" << thread
+							<< "]: got " << got << " want " << want << "\n";
+						return false;
+					}
+				}
+			}
+			return true;
+		};
+
+		auto cdRowCol8x8 = [](int groupID, int threadInGroup, int i,
+			int &row, int &col) {
+			row = groupID;
+			col = threadInGroup * 2 + i;
+		};
+		auto cdRowCol16x8 = [](int groupID, int threadInGroup, int i,
+			int &row, int &col) {
+			row = groupID + (i >= 2 ? 8 : 0);
+			col = threadInGroup * 2 + (i & 1);
+		};
+
+		// m8n8k16: 1 A register, 1 B register, 2 C/D registers, k = 16.
+		if (!runCase(PTXInstruction::MmaM8N8K16, 16,
+			PTXOperand::v1, 1, PTXOperand::v1, 1, PTXOperand::v2, 2, cdRowCol8x8,
+			PTXOperand::s8, PTXOperand::s8, -3, 5, 0, false,
+			-240, "mma.m8n8k16 s8xs8")) return false;
+		if (!runCase(PTXInstruction::MmaM8N8K16, 16,
+			PTXOperand::v1, 1, PTXOperand::v1, 1, PTXOperand::v2, 2, cdRowCol8x8,
+			PTXOperand::u8, PTXOperand::u8, 200, 200, 0, false,
+			640000, "mma.m8n8k16 u8xu8")) return false;
+		if (!runCase(PTXInstruction::MmaM8N8K16, 16,
+			PTXOperand::v1, 1, PTXOperand::v1, 1, PTXOperand::v2, 2, cdRowCol8x8,
+			PTXOperand::s8, PTXOperand::u8, -3, 200, 0, false,
+			-9600, "mma.m8n8k16 s8xu8")) return false;
+		if (!runCase(PTXInstruction::MmaM8N8K16, 16,
+			PTXOperand::v1, 1, PTXOperand::v1, 1, PTXOperand::v2, 2, cdRowCol8x8,
+			PTXOperand::s8, PTXOperand::s8, 127, 127,
+			(std::numeric_limits<PTXS32>::max)() - 100, true,
+			(std::numeric_limits<PTXS32>::max)(), "mma.m8n8k16 satfinite positive",
+			false)) return false;
+		if (!runCase(PTXInstruction::MmaM8N8K16, 16,
+			PTXOperand::v1, 1, PTXOperand::v1, 1, PTXOperand::v2, 2, cdRowCol8x8,
+			PTXOperand::s8, PTXOperand::s8, 127, -128,
+			(std::numeric_limits<PTXS32>::min)() + 100, true,
+			(std::numeric_limits<PTXS32>::min)(), "mma.m8n8k16 satfinite negative",
+			false)) return false;
+
+		// m16n8k32: 4 A registers, 2 B registers, 4 C/D registers, k = 32.
+		if (!runCase(PTXInstruction::MmaM16N8K32, 32,
+			PTXOperand::v4, 4, PTXOperand::v2, 2, PTXOperand::v4, 4, cdRowCol16x8,
+			PTXOperand::s8, PTXOperand::s8, -3, 5, 0, false,
+			-480, "mma.m16n8k32 s8xs8")) return false;
+		if (!runCase(PTXInstruction::MmaM16N8K32, 32,
+			PTXOperand::v4, 4, PTXOperand::v2, 2, PTXOperand::v4, 4, cdRowCol16x8,
+			PTXOperand::u8, PTXOperand::u8, 200, 200, 0, false,
+			1280000, "mma.m16n8k32 u8xu8")) return false;
+		if (!runCase(PTXInstruction::MmaM16N8K32, 32,
+			PTXOperand::v4, 4, PTXOperand::v2, 2, PTXOperand::v4, 4, cdRowCol16x8,
+			PTXOperand::s8, PTXOperand::u8, -3, 200, 0, false,
+			-19200, "mma.m16n8k32 s8xu8")) return false;
+		if (!runCase(PTXInstruction::MmaM16N8K32, 32,
+			PTXOperand::v4, 4, PTXOperand::v2, 2, PTXOperand::v4, 4, cdRowCol16x8,
+			PTXOperand::s8, PTXOperand::s8, 127, 127,
+			(std::numeric_limits<PTXS32>::max)() - 100, true,
+			(std::numeric_limits<PTXS32>::max)(), "mma.m16n8k32 satfinite positive",
+			false)) return false;
+		if (!runCase(PTXInstruction::MmaM16N8K32, 32,
+			PTXOperand::v4, 4, PTXOperand::v2, 2, PTXOperand::v4, 4, cdRowCol16x8,
+			PTXOperand::s8, PTXOperand::s8, 127, -128,
+			(std::numeric_limits<PTXS32>::min)() + 100, true,
+			(std::numeric_limits<PTXS32>::min)(), "mma.m16n8k32 satfinite negative",
+			false)) return false;
+
+		// Validation: m8n8k16 rejects m16n8k16-sized fragments (wrong vec).
+		{
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Mma;
+			ins.mmaShape = PTXInstruction::MmaM8N8K16;
+			ins.type = PTXOperand::s32;
+			ins.d = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 0, 4);
+			ins.c = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 6, 4);
+			ins.a = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v2, 0, 2);
+			ins.b = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v1, 4, 1);
+			if (ins.valid() == "") {
+				status << "mma.m8n8k16 with m16n8k16-sized fragments "
 					"unexpectedly valid\n";
 				return false;
 			}
@@ -9464,8 +9700,10 @@ public:
 			result = (result && test_Fma());
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());
+			result = (result && test_MmaFloatShapes());
 			result = (result && test_Mma());
 			result = (result && test_MmaInt8());
+			result = (result && test_MmaInt8WideShapes());
 			result = (result && test_Lg2());
 			result = (result && test_Sqrt());
 			result = (result && test_Rsqrt());

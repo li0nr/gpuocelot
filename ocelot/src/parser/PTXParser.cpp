@@ -2018,6 +2018,10 @@ namespace parser
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
 		statement.instruction.mmaShape = shapeToken == TOKEN_M16N8K8
 			? ir::PTXInstruction::MmaM16N8K8
+			: shapeToken == TOKEN_M8N8K16
+			? ir::PTXInstruction::MmaM8N8K16
+			: shapeToken == TOKEN_M16N8K32
+			? ir::PTXInstruction::MmaM16N8K32
 			: ir::PTXInstruction::MmaM16N8K16;
 		statement.instruction.type = accumulatorType;
 		statement.instruction.pg = operandVector[0].operand;

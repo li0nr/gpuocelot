@@ -5010,8 +5010,8 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 		inputType == ir::PTXOperand::u8;
 
 	if (intInput) {
-		// ponytail: m16n8k16 s8/u8 x s8/u8 -> s32 only; wider shapes/sub-byte
-		// types (m8n8k16, m16n8k32, u4/s4, b1) unimplemented, add if needed.
+		// s8/u8 x s8/u8 -> s32 only (m8n8k16, m16n8k16, m16n8k32); sub-byte
+		// types (u4/s4/b1) are unimplemented.
 		auto signExtend = [](ir::PTXU32 reg, unsigned int byteIndex,
 			ir::PTXOperand::DataType type) -> ir::PTXS32 {
 			const ir::PTXU32 field = (reg >> (byteIndex * 8)) & 0xffu;
@@ -5019,6 +5019,16 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 				return static_cast<ir::PTXS32>(field) - 256;
 			}
 			return static_cast<ir::PTXS32>(field);
+		};
+
+		auto satfiniteClamp = [&instr](int64_t acc) -> ir::PTXS32 {
+			if (instr.modifier & ir::PTXInstruction::satfinite) {
+				const int64_t upper = (std::numeric_limits<ir::PTXS32>::max)();
+				const int64_t lower = (std::numeric_limits<ir::PTXS32>::min)();
+				if (acc > upper) acc = upper;
+				else if (acc < lower) acc = lower;
+			}
+			return static_cast<ir::PTXS32>(acc);
 		};
 
 		for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
@@ -5034,64 +5044,162 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					context.PC, instr);
 			}
 
-			ir::PTXS32 A[16][16] = {};
-			ir::PTXS32 B[16][8] = {};
-			ir::PTXS32 C[16][8] = {};
+			if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K16) {
+				ir::PTXS32 A[8][16] = {};
+				ir::PTXS32 B[16][8] = {};
+				ir::PTXS32 C[8][8] = {};
 
-			for (int lane = 0; lane < 32; ++lane) {
-				int threadID = warpStart + lane;
-				int groupID = lane >> 2;
-				int threadInGroup = lane & 3;
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
 
-				for (int i = 0; i < 8; ++i) {
-					int row = (i < 4) ? groupID : groupID + 8;
-					int col = threadInGroup * 4 + (i & 3);
-					ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
-					A[row][col] = signExtend(reg, i & 3, instr.a.type);
+					ir::PTXU32 aReg = operandAsU32(threadID, instr.a.array[0]);
+					for (int i = 0; i < 4; ++i) {
+						A[groupID][threadInGroup * 4 + i] =
+							signExtend(aReg, i, instr.a.type);
+					}
+
+					ir::PTXU32 bReg = operandAsU32(threadID, instr.b.array[0]);
+					for (int i = 0; i < 4; ++i) {
+						B[threadInGroup * 4 + i][groupID] =
+							signExtend(bReg, i, instr.b.type);
+					}
+
+					for (int i = 0; i < 2; ++i) {
+						C[groupID][threadInGroup * 2 + i] =
+							operandAsS32(threadID, instr.c.array[i]);
+					}
 				}
 
-				for (int i = 0; i < 4; ++i) {
-					int row = threadInGroup * 4 + i;
-					int col = groupID;
-					ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[0]);
-					B[row][col] = signExtend(reg, i, instr.b.type);
+				ir::PTXS32 D[8][8];
+				for (int row = 0; row < 8; ++row) {
+					for (int col = 0; col < 8; ++col) {
+						int64_t acc = C[row][col];
+						for (int k = 0; k < 16; ++k) {
+							acc += static_cast<int64_t>(A[row][k]) *
+								static_cast<int64_t>(B[k][col]);
+						}
+						D[row][col] = satfiniteClamp(acc);
+					}
 				}
 
-				for (int i = 0; i < 4; ++i) {
-					int row = groupID + (i >= 2 ? 8 : 0);
-					int col = threadInGroup * 2 + (i & 1);
-					C[row][col] = operandAsS32(threadID, instr.c.array[i]);
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
+					for (int i = 0; i < 2; ++i) {
+						setRegAsS32(threadID, instr.d.array[i].reg,
+							D[groupID][threadInGroup * 2 + i]);
+					}
 				}
 			}
+			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K32) {
+				ir::PTXS32 A[16][32] = {};
+				ir::PTXS32 B[32][8] = {};
+				ir::PTXS32 C[16][8] = {};
 
-			ir::PTXS32 D[16][8];
-			for (int row = 0; row < 16; ++row) {
-				for (int col = 0; col < 8; ++col) {
-					int64_t acc = C[row][col];
-					for (int k = 0; k < 16; ++k) {
-						acc += static_cast<int64_t>(A[row][k]) *
-							static_cast<int64_t>(B[k][col]);
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
+
+					for (int i = 0; i < 16; ++i) {
+						int row = (i & 4) ? groupID + 8 : groupID;
+						int col = threadInGroup * 4 + (i & 3) + (i >= 8 ? 16 : 0);
+						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
+						A[row][col] = signExtend(reg, i & 3, instr.a.type);
 					}
-					if (instr.modifier & ir::PTXInstruction::satfinite) {
-						const int64_t upper =
-							(std::numeric_limits<ir::PTXS32>::max)();
-						const int64_t lower =
-							(std::numeric_limits<ir::PTXS32>::min)();
-						if (acc > upper) acc = upper;
-						else if (acc < lower) acc = lower;
+
+					for (int i = 0; i < 8; ++i) {
+						int row = threadInGroup * 4 + (i & 3) + (i >= 4 ? 16 : 0);
+						int col = groupID;
+						ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[i / 4]);
+						B[row][col] = signExtend(reg, i & 3, instr.b.type);
 					}
-					D[row][col] = static_cast<ir::PTXS32>(acc);
+
+					for (int i = 0; i < 4; ++i) {
+						int row = groupID + (i >= 2 ? 8 : 0);
+						int col = threadInGroup * 2 + (i & 1);
+						C[row][col] = operandAsS32(threadID, instr.c.array[i]);
+					}
+				}
+
+				ir::PTXS32 D[16][8];
+				for (int row = 0; row < 16; ++row) {
+					for (int col = 0; col < 8; ++col) {
+						int64_t acc = C[row][col];
+						for (int k = 0; k < 32; ++k) {
+							acc += static_cast<int64_t>(A[row][k]) *
+								static_cast<int64_t>(B[k][col]);
+						}
+						D[row][col] = satfiniteClamp(acc);
+					}
+				}
+
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
+					for (int i = 0; i < 4; ++i) {
+						int row = groupID + (i >= 2 ? 8 : 0);
+						int col = threadInGroup * 2 + (i & 1);
+						setRegAsS32(threadID, instr.d.array[i].reg, D[row][col]);
+					}
 				}
 			}
+			else {
+				ir::PTXS32 A[16][16] = {};
+				ir::PTXS32 B[16][8] = {};
+				ir::PTXS32 C[16][8] = {};
 
-			for (int lane = 0; lane < 32; ++lane) {
-				int threadID = warpStart + lane;
-				int groupID = lane >> 2;
-				int threadInGroup = lane & 3;
-				for (int i = 0; i < 4; ++i) {
-					int row = groupID + (i >= 2 ? 8 : 0);
-					int col = threadInGroup * 2 + (i & 1);
-					setRegAsS32(threadID, instr.d.array[i].reg, D[row][col]);
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
+
+					for (int i = 0; i < 8; ++i) {
+						int row = (i < 4) ? groupID : groupID + 8;
+						int col = threadInGroup * 4 + (i & 3);
+						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
+						A[row][col] = signExtend(reg, i & 3, instr.a.type);
+					}
+
+					for (int i = 0; i < 4; ++i) {
+						int row = threadInGroup * 4 + i;
+						int col = groupID;
+						ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[0]);
+						B[row][col] = signExtend(reg, i, instr.b.type);
+					}
+
+					for (int i = 0; i < 4; ++i) {
+						int row = groupID + (i >= 2 ? 8 : 0);
+						int col = threadInGroup * 2 + (i & 1);
+						C[row][col] = operandAsS32(threadID, instr.c.array[i]);
+					}
+				}
+
+				ir::PTXS32 D[16][8];
+				for (int row = 0; row < 16; ++row) {
+					for (int col = 0; col < 8; ++col) {
+						int64_t acc = C[row][col];
+						for (int k = 0; k < 16; ++k) {
+							acc += static_cast<int64_t>(A[row][k]) *
+								static_cast<int64_t>(B[k][col]);
+						}
+						D[row][col] = satfiniteClamp(acc);
+					}
+				}
+
+				for (int lane = 0; lane < 32; ++lane) {
+					int threadID = warpStart + lane;
+					int groupID = lane >> 2;
+					int threadInGroup = lane & 3;
+					for (int i = 0; i < 4; ++i) {
+						int row = groupID + (i >= 2 ? 8 : 0);
+						int col = threadInGroup * 2 + (i & 1);
+						setRegAsS32(threadID, instr.d.array[i].reg, D[row][col]);
+					}
 				}
 			}
 		}

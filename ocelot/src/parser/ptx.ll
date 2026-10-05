@@ -541,6 +541,10 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return TOKEN_M16N8K8; }
 ".m16n8k16"                      { yylval->value = TOKEN_M16N8K16; \
                                     return TOKEN_M16N8K16; }
+".m8n8k16"                       { yylval->value = TOKEN_M8N8K16; \
+                                    return TOKEN_M8N8K16; }
+".m16n8k32"                      { yylval->value = TOKEN_M16N8K32; \
+                                    return TOKEN_M16N8K32; }
 ".row"                           { yylval->value = TOKEN_ROW; return TOKEN_ROW; }
 ".col"                           { yylval->value = TOKEN_COL; return TOKEN_COL; }
 ".popc"                         { yylval->value = TOKEN_POPC; \

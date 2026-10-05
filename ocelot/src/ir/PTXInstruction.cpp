@@ -1449,8 +1449,9 @@ std::string ir::PTXInstruction::valid() const {
 			const bool intInput = a.type == PTXOperand::s8 ||
 				a.type == PTXOperand::u8;
 			if (intInput) {
-				if (mmaShape != MmaM16N8K16) {
-					return "integer mma requires m16n8k16";
+				if (mmaShape != MmaM16N8K16 && mmaShape != MmaM8N8K16 &&
+					mmaShape != MmaM16N8K32) {
+					return "integer mma requires m8n8k16, m16n8k16, or m16n8k32";
 				}
 				if (type != PTXOperand::s32) {
 					return "integer mma requires s32 accumulators";
@@ -1461,14 +1462,26 @@ std::string ir::PTXInstruction::valid() const {
 				if (d.type != PTXOperand::s32 || c.type != PTXOperand::s32) {
 					return "integer mma C and D types must be s32";
 				}
-				if (d.vec != PTXOperand::v4 || c.vec != PTXOperand::v4 ||
-					a.vec != PTXOperand::v2 || b.vec != PTXOperand::v1) {
-					return "integer mma.m16n8k16 has invalid fragment sizes";
+				const PTXOperand::Vec aVec = mmaShape == MmaM16N8K32
+					? PTXOperand::v4 : mmaShape == MmaM8N8K16
+					? PTXOperand::v1 : PTXOperand::v2;
+				const PTXOperand::Vec bVec = mmaShape == MmaM8N8K16
+					? PTXOperand::v1 : mmaShape == MmaM16N8K32
+					? PTXOperand::v2 : PTXOperand::v1;
+				const PTXOperand::Vec cdVec = mmaShape == MmaM8N8K16
+					? PTXOperand::v2 : PTXOperand::v4;
+				const unsigned int aCount = mmaShape == MmaM16N8K32
+					? 4u : mmaShape == MmaM8N8K16 ? 1u : 2u;
+				const unsigned int bCount = mmaShape == MmaM8N8K16
+					? 1u : mmaShape == MmaM16N8K32 ? 2u : 1u;
+				const unsigned int cdCount = mmaShape == MmaM8N8K16 ? 2u : 4u;
+				if (d.vec != cdVec || c.vec != cdVec ||
+					a.vec != aVec || b.vec != bVec) {
+					return "integer mma has invalid fragment sizes";
 				}
-				if (d.array.size() != 4 || c.array.size() != 4 ||
-					a.array.size() != 2 || b.array.size() != 1) {
-					return "integer mma.m16n8k16 has invalid fragment "
-						"register counts";
+				if (d.array.size() != cdCount || c.array.size() != cdCount ||
+					a.array.size() != aCount || b.array.size() != bCount) {
+					return "integer mma has invalid fragment register counts";
 				}
 				for (PTXOperand::Array::const_iterator element = a.array.begin();
 					element != a.array.end(); ++element) {
@@ -1501,8 +1514,8 @@ std::string ir::PTXInstruction::valid() const {
 			const bool m16n8k8 = mmaShape == MmaM16N8K8;
 			const bool tf32Input = a.type == PTXOperand::tf32;
 			const bool halfAccumulator = type == PTXOperand::f16;
-			if (mmaShape == MmaShape_Invalid) {
-				return "mma has no shape";
+			if (mmaShape != MmaM16N8K8 && mmaShape != MmaM16N8K16) {
+				return "floating-point mma requires m16n8k8 or m16n8k16";
 			}
 			if (!halfAccumulator && type != PTXOperand::f32) {
 				return "mma requires f16 or f32 accumulators";
@@ -1547,29 +1560,33 @@ std::string ir::PTXInstruction::valid() const {
 			}
 			for (PTXOperand::Array::const_iterator element = a.array.begin();
 				element != a.array.end(); ++element) {
-				if (element->type != PTXOperand::b32) {
+				if (element->type != PTXOperand::b32 &&
+					(tf32Input || element->type != PTXOperand::f16x2)) {
 					return "mma A fragment registers must be 32-bit packed values";
 				}
 			}
 			for (PTXOperand::Array::const_iterator element = b.array.begin();
 				element != b.array.end(); ++element) {
-				if (element->type != PTXOperand::b32) {
+				if (element->type != PTXOperand::b32 &&
+					(tf32Input || element->type != PTXOperand::f16x2)) {
 					return "mma B fragment registers must be 32-bit packed values";
 				}
 			}
 			for (PTXOperand::Array::const_iterator element = c.array.begin();
 				element != c.array.end(); ++element) {
-				if (halfAccumulator ? element->type != PTXOperand::b32
+				if (halfAccumulator ? (element->type != PTXOperand::b32 &&
+					element->type != PTXOperand::f16x2)
 					: !PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
-					return halfAccumulator ? "mma C fragment registers must be b32"
+					return halfAccumulator ? "mma C fragment registers must be b32 or f16x2"
 						: "mma C fragment registers must be f32 or b32";
 				}
 			}
 			for (PTXOperand::Array::const_iterator element = d.array.begin();
 				element != d.array.end(); ++element) {
-				if (halfAccumulator ? element->type != PTXOperand::b32
+				if (halfAccumulator ? (element->type != PTXOperand::b32 &&
+					element->type != PTXOperand::f16x2)
 					: !PTXOperand::relaxedValid(PTXOperand::f32, element->type)) {
-					return halfAccumulator ? "mma D fragment registers must be b32"
+					return halfAccumulator ? "mma D fragment registers must be b32 or f16x2"
 						: "mma D fragment registers must be f32 or b32";
 				}
 			}
@@ -2681,7 +2698,7 @@ std::string ir::PTXInstruction::toString() const {
 				result += toString( semantics ) + ".";
 			}
 			if( scope != Level_Invalid ) {
-				// ponytail: same ".gpu" spelling quirk as fence's printer
+				// same ".gpu" spelling quirk as fence's printer
 				result += ( ( scope == GlobalLevel ) ? "gpu" : toString( scope ) )
 					+ std::string( "." );
 			}
@@ -2952,10 +2969,16 @@ std::string ir::PTXInstruction::toString() const {
 			return result;
 		}
 		case Mma: {
-			const bool m16n8k8 = mmaShape == MmaM16N8K8;
+			std::string shapeName;
+			switch (mmaShape) {
+			case MmaM16N8K8:  shapeName = "16n8k8";  break;
+			case MmaM8N8K16:  shapeName = "8n8k16";  break;
+			case MmaM16N8K32: shapeName = "16n8k32"; break;
+			default:          shapeName = "16n8k16"; break;
+			}
 			std::string result = guard() +
 				"mma.sync.aligned.m" +
-				(m16n8k8 ? "16n8k8" : "16n8k16") +
+				shapeName +
 				".row.col." +
 				((modifier & satfinite) ? "satfinite." : "") +
 				PTXOperand::toString(type) + "." +
@@ -2982,7 +3005,7 @@ std::string ir::PTXInstruction::toString() const {
 			return guard() + "membar." + toString( level );
 		}
 		case Fence: {
-			// ponytail: fence spells the device-wide scope ".gpu", membar spells
+			// fence spells the device-wide scope ".gpu", membar spells
 			// the same GlobalLevel value ".gl" -- toString(Level) can't be reused as-is
 			std::string scope = ( level == GlobalLevel ) ? "gpu" : toString( level );
 			return guard() + "fence." + toString( semantics ) + "." + scope;

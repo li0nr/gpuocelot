@@ -172,6 +172,8 @@ namespace ir {
 		enum MmaShape {
 			MmaM16N8K8,
 			MmaM16N8K16,
+			MmaM8N8K16,
+			MmaM16N8K32,
 			MmaShape_Invalid
 		};
 		
