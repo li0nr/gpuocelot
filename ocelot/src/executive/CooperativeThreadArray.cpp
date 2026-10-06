@@ -5011,7 +5011,9 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 	}
 
 	const ir::PTXOperand::DataType inputType = instr.a.type;
-	const bool intInput = inputType == ir::PTXOperand::s8 ||
+	const bool subByteInput = inputType == ir::PTXOperand::s4 ||
+		inputType == ir::PTXOperand::u4;
+	const bool intInput = subByteInput || inputType == ir::PTXOperand::s8 ||
 		inputType == ir::PTXOperand::u8;
 
 	if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K4 &&
@@ -5065,13 +5067,15 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 		throw RuntimeException("unsupported f64 mma shape", context.PC, instr);
 	}
 	if (intInput) {
-		// s8/u8 x s8/u8 -> s32 only (m8n8k16, m16n8k16, m16n8k32); sub-byte
-		// types (u4/s4/b1) are unimplemented.
-		auto signExtend = [](ir::PTXU32 reg, unsigned int byteIndex,
+		// Packed 8-bit and 4-bit integer inputs accumulate into s32.
+		auto signExtend = [](ir::PTXU32 reg, unsigned int elementIndex,
 			ir::PTXOperand::DataType type) -> ir::PTXS32 {
-			const ir::PTXU32 field = (reg >> (byteIndex * 8)) & 0xffu;
-			if (type == ir::PTXOperand::s8 && (field & 0x80u)) {
-				return static_cast<ir::PTXS32>(field) - 256;
+			const unsigned bits = (type == ir::PTXOperand::s4 ||
+				type == ir::PTXOperand::u4) ? 4 : 8;
+			const ir::PTXU32 field = (reg >> (elementIndex * bits)) & ((1u << bits) - 1);
+			if ((type == ir::PTXOperand::s4 || type == ir::PTXOperand::s8) &&
+				(field & (1u << (bits - 1)))) {
+				return static_cast<ir::PTXS32>(field) - (1 << bits);
 			}
 			return static_cast<ir::PTXS32>(field);
 		};
@@ -5099,9 +5103,12 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					context.PC, instr);
 			}
 
-			if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K16) {
-				ir::PTXS32 A[8][16] = {};
-				ir::PTXS32 B[16][8] = {};
+			if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K16 ||
+				instr.mmaShape == ir::PTXInstruction::MmaM8N8K32) {
+				const int elementsPerRegister = subByteInput ? 8 : 4;
+				const int kCount = subByteInput ? 32 : 16;
+				ir::PTXS32 A[8][32] = {};
+				ir::PTXS32 B[32][8] = {};
 				ir::PTXS32 C[8][8] = {};
 
 				for (int lane = 0; lane < 32; ++lane) {
@@ -5110,14 +5117,14 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					int threadInGroup = lane & 3;
 
 					ir::PTXU32 aReg = operandAsU32(threadID, instr.a.array[0]);
-					for (int i = 0; i < 4; ++i) {
-						A[groupID][threadInGroup * 4 + i] =
+					for (int i = 0; i < elementsPerRegister; ++i) {
+						A[groupID][threadInGroup * elementsPerRegister + i] =
 							signExtend(aReg, i, instr.a.type);
 					}
 
 					ir::PTXU32 bReg = operandAsU32(threadID, instr.b.array[0]);
-					for (int i = 0; i < 4; ++i) {
-						B[threadInGroup * 4 + i][groupID] =
+					for (int i = 0; i < elementsPerRegister; ++i) {
+						B[threadInGroup * elementsPerRegister + i][groupID] =
 							signExtend(bReg, i, instr.b.type);
 					}
 
@@ -5131,7 +5138,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 				for (int row = 0; row < 8; ++row) {
 					for (int col = 0; col < 8; ++col) {
 						int64_t acc = C[row][col];
-						for (int k = 0; k < 16; ++k) {
+						for (int k = 0; k < kCount; ++k) {
 							acc += static_cast<int64_t>(A[row][k]) *
 								static_cast<int64_t>(B[k][col]);
 						}

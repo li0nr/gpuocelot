@@ -1450,6 +1450,16 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Mma: {
+			for (const PTXOperand* operand : {&a, &b, &c, &d}) {
+				if (operand->addressMode != PTXOperand::Register) {
+					return "mma fragments must be register operands";
+				}
+				for (const auto& element : operand->array) {
+					if (element.addressMode != PTXOperand::Register) {
+						return "mma fragment elements must be registers";
+					}
+				}
+			}
 			if ((mmaAColumnMajor || !mmaBColumnMajor) &&
 				(mmaShape != MmaM8N8K4 || a.type != PTXOperand::f16)) {
 				return "this mma form requires row.col layouts";
@@ -1484,6 +1494,19 @@ std::string ir::PTXInstruction::valid() const {
 						if (input || operand->type == PTXOperand::f16 ?
 							(element.type != PTXOperand::b32 && element.type != PTXOperand::f16x2) :
 							!PTXOperand::relaxedValid(PTXOperand::f32, element.type)) return "invalid mma fragment register type";
+				}
+				break;
+			}
+			if (a.type == PTXOperand::s4 || a.type == PTXOperand::u4) {
+				if (mmaShape != MmaM8N8K32 || (b.type != PTXOperand::s4 && b.type != PTXOperand::u4) ||
+					type != PTXOperand::s32 || c.type != type || d.type != type || (modifier & ~satfinite))
+					return "unsupported sub-byte mma shape/type/modifier combination";
+				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
+					const bool input = operand == &a || operand == &b;
+					if (operand->vec != (input ? PTXOperand::v1 : PTXOperand::v2) || operand->array.size() != (input ? 1u : 2u))
+						return "invalid m8n8k32 fragment size";
+					for (const auto& element : operand->array)
+						if (input ? element.type != PTXOperand::b32 : !PTXOperand::relaxedValid(type, element.type)) return "invalid sub-byte mma register type";
 				}
 				break;
 			}
@@ -3018,6 +3041,7 @@ std::string ir::PTXInstruction::toString() const {
 		case Mma: {
 			std::string shapeName;
 			switch (mmaShape) {
+			case MmaM8N8K32:  shapeName = "8n8k32";  break;
 			case MmaM8N8K4:   shapeName = "8n8k4";   break;
 			case MmaM16N8K4:  shapeName = "16n8k4";  break;
 			case MmaM16N8K8:  shapeName = "16n8k8";  break;

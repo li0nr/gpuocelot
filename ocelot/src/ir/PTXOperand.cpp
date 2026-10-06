@@ -37,6 +37,8 @@ std::string ir::PTXOperand::toString(Vec index) {
 
 std::string ir::PTXOperand::toString( DataType type ) {
 	switch( type ) {
+		case s4:   return "s4";   break;
+		case u4:   return "u4";   break;
 		case s8:   return "s8";   break;
 		case s16:  return "s16";  break;
 		case s32:  return "s32";  break;

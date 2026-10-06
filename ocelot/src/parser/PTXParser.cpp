@@ -1673,13 +1673,13 @@ namespace parser
 			operand.array.clear();
 			return;
 		}
-		if( identifiers.size() > 4 )
+		if( identifiers.size() == 3 || identifiers.size() > 4 )
 		{
 			throw_exception( toString( location, *this ) 
 				<< "Array operand \"" 
 				<< hydrazine::toString( identifiers.begin(), 
 				identifiers.end(), "," ) 
-				<< "\" has more than 4 elements.", InvalidArray );
+				<< "\" must have 1, 2, 4, or 8 elements.", InvalidArray );
 		}
 
 		if( mode == 0 )
@@ -2030,7 +2030,9 @@ namespace parser
 
 		statement.directive = ir::PTXStatement::Instr;
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
-		statement.instruction.mmaShape = shapeToken == TOKEN_M16N8K8
+		statement.instruction.mmaShape = shapeToken == TOKEN_M8N8K32
+			? ir::PTXInstruction::MmaM8N8K32
+			: shapeToken == TOKEN_M16N8K8
 			? ir::PTXInstruction::MmaM16N8K8
 			: shapeToken == TOKEN_M8N8K4
 			? ir::PTXInstruction::MmaM8N8K4
@@ -2658,6 +2660,8 @@ namespace parser
 	{
 		switch( token )
 		{
+			case TOKEN_S4: return ir::PTXOperand::s4;
+			case TOKEN_U4: return ir::PTXOperand::u4;
 			case TOKEN_U8:   return ir::PTXOperand::u8; break;
 			case TOKEN_U16:  return ir::PTXOperand::u16; break;
 			case TOKEN_U32:  return ir::PTXOperand::u32; break;
