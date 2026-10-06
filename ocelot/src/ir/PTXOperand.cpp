@@ -30,6 +30,7 @@ std::string ir::PTXOperand::toString(Vec index) {
 		case v1: return "v1"; break;
 		case v2: return "v2"; break;
 		case v4: return "v4"; break;
+		case v8: return "v8"; break;
 	}
 	return "";
 }
@@ -819,7 +820,8 @@ std::string ir::PTXOperand::toString() const {
 	else if( vec != v1 ) {
 		if( !array.empty() ) {
 			assert( ( vec == v2 && array.size() == 2 ) 
-				|| ( vec == v4 && array.size() == 4 ) );
+				|| ( vec == v4 && array.size() == 4 )
+				|| ( vec == v8 && array.size() == 8 ) );
 			std::string result = "{";
 			for( Array::const_iterator fi = array.begin(); 
 				fi != array.end(); ++fi ) {

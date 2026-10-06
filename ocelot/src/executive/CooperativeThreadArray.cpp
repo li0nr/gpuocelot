@@ -5284,15 +5284,30 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					A[group][aRow][aCol] = mmaHalf(*this, warp + lane, instr.a.array[i / 2], i & 1, inputType);
 					B[group][bRow][bCol] = mmaHalf(*this, warp + lane, instr.b.array[i / 2], i & 1, inputType);
 				}
-				for (int i = 0; i < 8; ++i) D[group][row][i] = mmaHalf(*this, warp + lane, instr.c.array[i / 2], i & 1, inputType);
+				for (int i = 0; i < 8; ++i) {
+					if (instr.c.type == ir::PTXOperand::f32) {
+						const int cRow = (lane & 1) + (i & 2) + (lane >= 16 ? 4 : 0);
+						const int cCol = (i & 4) + (lane & 2) + (i & 1);
+						D[group][cRow][cCol] = operandAsF32(warp + lane, instr.c.array[i]);
+					} else D[group][row][i] = mmaHalf(*this, warp + lane, instr.c.array[i / 2], i & 1, inputType);
+				}
 			}
 			for (int group = 0; group < 4; ++group)
 				for (int row = 0; row < 8; ++row)
 					for (int col = 0; col < 8; ++col)
-						for (int k = 0; k < 4; ++k) D[group][row][col] = f16ToF32(toF16(std::fma(A[group][row][k], B[group][k][col], D[group][row][col]), 0));
+						for (int k = 0; k < 4; ++k) {
+							D[group][row][col] = std::fma(A[group][row][k], B[group][k][col], D[group][row][col]);
+							if (instr.type == ir::PTXOperand::f16) D[group][row][col] = f16ToF32(toF16(D[group][row][col], 0));
+						}
 			for (int lane = 0; lane < 32; ++lane) {
 				const int group = (lane >> 2) & 3, row = (lane & 3) + (lane >= 16 ? 4 : 0);
-				for (int i = 0; i < 4; ++i) setRegAsB32(warp + lane, instr.d.array[i].reg,
+				if (instr.type == ir::PTXOperand::f32) {
+					for (int i = 0; i < 8; ++i) {
+						const int dRow = (lane & 1) + (i & 2) + (lane >= 16 ? 4 : 0);
+						const int dCol = (i & 4) + (lane & 2) + (i & 1);
+						setRegAsF32(warp + lane, instr.d.array[i].reg, D[group][dRow][dCol]);
+					}
+				} else for (int i = 0; i < 4; ++i) setRegAsB32(warp + lane, instr.d.array[i].reg,
 					toF16(D[group][row][2 * i], 0) | (static_cast<ir::PTXU32>(toF16(D[group][row][2 * i + 1], 0)) << 16));
 			}
 		}

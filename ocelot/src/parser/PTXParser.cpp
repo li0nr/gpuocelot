@@ -1659,6 +1659,20 @@ namespace parser
 
 		OperandWrapper* mode = _getOperand( identifiers.front() );
 	
+		if (identifiers.size() == 8) {
+			operand.addressMode = ir::PTXOperand::Register;
+			operand.vec = ir::PTXOperand::v8;
+			operand.array.clear();
+			for (const auto& name : identifiers) {
+				auto* element = _getOperand(name);
+				if (!element) throw_exception(toString(location, *this) << "Operand " << name << " not declared.", NoDeclaration);
+				operand.array.push_back(element->operand);
+			}
+			operand.type = operand.array.front().type;
+			operandVector.push_back(operand);
+			operand.array.clear();
+			return;
+		}
 		if( identifiers.size() > 4 )
 		{
 			throw_exception( toString( location, *this ) 

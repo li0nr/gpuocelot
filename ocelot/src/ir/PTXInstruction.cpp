@@ -529,6 +529,8 @@ bool ir::PTXInstruction::operator==( const PTXInstruction& i ) const {
 }
 
 std::string ir::PTXInstruction::valid() const {
+	if (opcode != Mma && (d.vec == PTXOperand::v8 || a.vec == PTXOperand::v8 ||
+		b.vec == PTXOperand::v8 || c.vec == PTXOperand::v8)) return "eight-register fragments require mma";
 	if( opcode == Min || opcode == Max ) {
 		const unsigned int fp32Modifiers = nan | xorsign | abs;
 		if( (modifier & fp32Modifiers) && type != PTXOperand::f32
@@ -1469,14 +1471,19 @@ std::string ir::PTXInstruction::valid() const {
 				break;
 			}
 			if (mmaShape == MmaM8N8K4) {
-				if (type != PTXOperand::f16 || a.type != type || b.type != type || c.type != type || d.type != type || modifier)
+				if ((type != PTXOperand::f16 && type != PTXOperand::f32) || a.type != PTXOperand::f16 ||
+					b.type != a.type || (c.type != PTXOperand::f16 && c.type != PTXOperand::f32) ||
+					d.type != type || (c.type == PTXOperand::f32 && type != PTXOperand::f32) || modifier)
 					return "unsupported m8n8k4 type/modifier combination";
 				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
 					const bool input = operand == &a || operand == &b;
-					if (operand->vec != (input ? PTXOperand::v2 : PTXOperand::v4) || operand->array.size() != (input ? 2u : 4u))
+					const unsigned count = input ? 2 : operand->type == PTXOperand::f32 ? 8 : 4;
+					if (operand->vec != static_cast<PTXOperand::Vec>(count) || operand->array.size() != count)
 						return "invalid m8n8k4 f16 fragment size";
 					for (const auto& element : operand->array)
-						if (element.type != PTXOperand::b32 && element.type != PTXOperand::f16x2) return "invalid packed f16 mma register type";
+						if (input || operand->type == PTXOperand::f16 ?
+							(element.type != PTXOperand::b32 && element.type != PTXOperand::f16x2) :
+							!PTXOperand::relaxedValid(PTXOperand::f32, element.type)) return "invalid mma fragment register type";
 				}
 				break;
 			}

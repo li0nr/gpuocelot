@@ -144,7 +144,8 @@ namespace ir {
 		enum Vec {
 			v1 = 1, 			//< scalar
 			v2 = 2,				//< vector2
-			v4 = 4				//< vector4
+			v4 = 4,				//< vector4
+			v8 = 8                  //< eight-register MMA fragment
 		};
 		
 		enum VectorIndex {

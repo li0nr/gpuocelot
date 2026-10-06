@@ -5567,6 +5567,99 @@ public:
 			}
 		}
 
+		ins.type = PTXOperand::f32;
+		ins.mmaAColumnMajor = false; ins.mmaBColumnMajor = true;
+		ins.a = vector(PTXOperand::f16, PTXOperand::b32, PTXOperand::v2, 8, 2);
+		ins.b = vector(PTXOperand::f16, PTXOperand::b32, PTXOperand::v2, 10, 2);
+		ins.c = ins.d = vector(PTXOperand::f32, PTXOperand::f32, PTXOperand::v8, 0, 8);
+		for (auto* operand : {&ins.a, &ins.b, &ins.c, &ins.d}) for (auto& e : operand->array) e.identifier = "%f" + std::to_string(e.reg);
+		std::stringstream fp32Source;
+		fp32Source << ".version 8.0\n.target sm_86\n.entry fp32_884() { .reg .b32 %f<12>; " << ins.toString() << "; ret; }";
+		Module fp32Parsed; fp32Parsed.load(fp32Source);
+		std::stringstream fp32Printed; fp32Parsed.write(fp32Printed); Module fp32Roundtrip; fp32Roundtrip.load(fp32Printed);
+		cta->reset();
+		cta->functionCallStack.pushFrame(0, 12, 0, 0, 0, 0, 0);
+		for (int lane = 0; lane < 32; ++lane) {
+			const int group = lane / 4 % 4, t = lane % 4, high = lane / 16 * 4;
+			for (int i = 0; i < 2; ++i) {
+				cta->setRegAsB32(lane, 8 + i, f16Values[group + 2 * i + high + t + 1] | ((PTXU32)f16Values[group + 2 * i + high + t + 2] << 16));
+				cta->setRegAsB32(lane, 10 + i, f16Values[group + t + high + 4 * i] | ((PTXU32)f16Values[group + t + high + 4 * i + 2] << 16));
+			}
+			for (int i = 0; i < 8; ++i) cta->setRegAsF32(lane, i, 100 * (lane % 2 + (i & 2) + high) + (i & 4) + (lane & 2) + (i & 1) + 0.25f);
+		}
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for (int lane = 0; lane < 32; ++lane) for (int i = 0; i < 8; ++i) {
+			const int group = lane / 4 % 4, row = lane % 2 + (i & 2) + lane / 16 * 4, col = (i & 4) + (lane & 2) + i % 2;
+			float expected = 100 * row + col + 0.25f;
+			for (int k = 0; k < 4; ++k) expected += (group + row + k + 1) * (group + col + 2 * k);
+			if (cta->getRegAsF32(lane, i) != expected) { status << "legacy mma f32 mismatch lane " << lane << " register " << i << "\n"; return false; }
+		}
+		PTXInstruction illegalMixed = ins;
+		illegalMixed.type = illegalMixed.d.type = PTXOperand::f16;
+		illegalMixed.d = vector(PTXOperand::f16, PTXOperand::b32, PTXOperand::v4, 0, 4);
+		if (illegalMixed.valid().empty()) { status << "mma accepted f32 C with f16 D\n"; return false; }
+		ins.c = vector(PTXOperand::f16, PTXOperand::f16x2, PTXOperand::v4, 0, 4);
+		for (auto& element : ins.c.array) element.identifier = "%f" + std::to_string(element.reg);
+		for (int layout = 0; layout < 4; ++layout) {
+			ins.mmaAColumnMajor = layout & 1;
+			ins.mmaBColumnMajor = layout & 2;
+			std::stringstream source;
+			source << ".version 8.0\n.target sm_86\n.entry mixed() { .reg .b32 %f<12>; " << ins.toString() << "; ret; }";
+			Module parsed; parsed.load(source);
+			std::stringstream printed; parsed.write(printed);
+			Module roundtrip; roundtrip.load(printed);
+			for (int lane = 0; lane < 32; ++lane) {
+				const int group = lane / 4 % 4, t = lane % 4, high = lane / 16 * 4;
+				PTXU32 packedA[2] = {}, packedB[2] = {};
+				for (int i = 0; i < 4; ++i) {
+					const int aRow = ins.mmaAColumnMajor ? i + high : t + high;
+					const int aK = ins.mmaAColumnMajor ? t : i;
+					const int bK = ins.mmaBColumnMajor ? i : t;
+					const int bCol = ins.mmaBColumnMajor ? t + high : i + high;
+					packedA[i / 2] |= (PTXU32)f16Values[group + aRow + aK + 1] << (16 * (i % 2));
+					packedB[i / 2] |= (PTXU32)f16Values[group + bCol + 2 * bK] << (16 * (i % 2));
+				}
+				for (int i = 0; i < 2; ++i) {
+					cta->setRegAsB32(lane, 8 + i, packedA[i]);
+					cta->setRegAsB32(lane, 10 + i, packedB[i]);
+				}
+				for (int i = 0; i < 4; ++i) {
+					const PTXU32 packedC = f16Values[t + high + 2 * i] | ((PTXU32)f16Values[t + high + 2 * i + 1] << 16);
+					cta->setRegAsB32(lane, i, packedC);
+				}
+			}
+			cta->eval_Mma(cta->getActiveContext(), ins);
+			for (int lane = 0; lane < 32; ++lane) {
+				for (int i = 0; i < 8; ++i) {
+					const int group = lane / 4 % 4;
+					const int row = lane % 2 + (i & 2) + lane / 16 * 4;
+					const int col = (i & 4) + (lane & 2) + i % 2;
+					float expected = row + col;
+					for (int k = 0; k < 4; ++k) expected += (group + row + k + 1) * (group + col + 2 * k);
+					if (cta->getRegAsF32(lane, i) != expected) {
+						status << "mixed mma mismatch layout " << layout << " lane " << lane << " register " << i << "\n";
+						return false;
+					}
+				}
+			}
+		}
+		// Keep a quarter-unit from FP16 C even when half-precision accumulation would lose it.
+		for (int lane = 0; lane < 32; ++lane) {
+			for (int i = 0; i < 4; ++i) cta->setRegAsB32(lane, i, 0x34003400u);
+		}
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for (int lane = 0; lane < 32; ++lane) {
+			for (int i = 0; i < 8; ++i) {
+				const int group = lane / 4 % 4;
+				const int row = lane % 2 + (i & 2) + lane / 16 * 4;
+				const int col = (i & 4) + (lane & 2) + i % 2;
+				float expected = 0.25f;
+				for (int k = 0; k < 4; ++k) expected += (group + row + k + 1) * (group + col + 2 * k);
+				if (cta->getRegAsF32(lane, i) != expected) { status << "mixed mma lost FP32 accumulation precision\n"; return false; }
+			}
+		}
+		cta->functionCallStack.popFrame();
+
 		return true;
 	}
 
