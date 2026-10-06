@@ -5245,8 +5245,8 @@ public:
 				}
 			}
 		}
-		// PTX 8.0: m8n8k16/m16n8k32 are integer-only shapes.
-		for (const char* shape : {"m16n8k4", "m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32"}) {
+		// PTX 8.0: m8n8k16/m16n8k32/m16n8k64 are integer-only shapes.
+		for (const char* shape : {"m16n8k4", "m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32", "m16n8k64"}) {
 			for (const char* input : {"f16", "bf16", "tf32"}) {
 				for (const char* accumulator : {"f16", "f32"}) {
 					const bool small = std::string(shape) == "m16n8k8";
@@ -5294,13 +5294,25 @@ public:
 				std::stringstream stream(source); Module parsed; parsed.load(stream);
 				std::stringstream printed; parsed.write(printed); Module roundtrip; roundtrip.load(printed);
 				if (printed.str().find(instruction.substr(0, instruction.find(' '))) == std::string::npos) return false;
+				const std::string wideInstruction = std::string("mma.sync.aligned.m16n8k32.row.col.") + saturation +
+					"s32." + a + "." + b + ".s32 {%r0,%r1,%r2,%r3}, {%r4,%r5}, {%r6}, {%r7,%r8,%r9,%r10};";
+				std::stringstream wideSource(".version 8.0\n.target sm_86\n.entry int4_wide() { .reg .b32 %r<11>; " + wideInstruction + " ret; }");
+				Module wideParsed; wideParsed.load(wideSource);
+				std::stringstream widePrinted; wideParsed.write(widePrinted); Module wideRoundtrip; wideRoundtrip.load(widePrinted);
+				if (widePrinted.str().find(wideInstruction.substr(0, wideInstruction.find(' '))) == std::string::npos) return false;
+				const std::string k64Instruction = std::string("mma.sync.aligned.m16n8k64.row.col.") + saturation +
+					"s32." + a + "." + b + ".s32 {%r0,%r1,%r2,%r3}, {%r4,%r5,%r6,%r7}, {%r8,%r9}, {%r10,%r11,%r12,%r13};";
+				std::stringstream k64Source(".version 8.0\n.target sm_86\n.entry int4_k64() { .reg .b32 %r<14>; " + k64Instruction + " ret; }");
+				Module k64Parsed; k64Parsed.load(k64Source);
+				std::stringstream k64Printed; k64Parsed.write(k64Printed); Module k64Roundtrip; k64Roundtrip.load(k64Printed);
+				if (k64Printed.str().find(k64Instruction.substr(0, k64Instruction.find(' '))) == std::string::npos) return false;
 				for (const char* invalid : {"m8n8k16", "m16n8k32"}) {
 					std::string bad = source;
 					bad.replace(bad.find("m8n8k32"), 7, invalid);
 					std::stringstream input(bad); bool rejected = false;
 					try { Module module; module.load(input); }
 					catch (const std::exception&) { rejected = true; }
-					if (!rejected) { status << "unsupported sub-byte mma shape accepted\n"; return false; }
+					if (!rejected) { status << "invalid sub-byte mma shape/fragments accepted\n"; return false; }
 				}
 			}
 		}
@@ -5880,34 +5892,53 @@ public:
 		}
 
 		for (auto aType : {PTXOperand::s4, PTXOperand::u4}) for (auto bType : {PTXOperand::s4, PTXOperand::u4}) {
-			for (bool saturate : {false, true}) for (int sign : {-1, 1}) {
+			for (bool saturate : {false, true}) for (int sign : {-1, 1})
+			for (auto shape : {PTXInstruction::MmaM8N8K32, PTXInstruction::MmaM16N8K32, PTXInstruction::MmaM16N8K64}) {
+				const bool wide = shape != PTXInstruction::MmaM8N8K32;
+				const bool k64 = shape == PTXInstruction::MmaM16N8K64;
 				PTXInstruction ins;
-				ins.opcode = PTXInstruction::Mma; ins.mmaShape = PTXInstruction::MmaM8N8K32;
+				ins.opcode = PTXInstruction::Mma; ins.mmaShape = shape;
 				ins.type = PTXOperand::s32; ins.modifier = saturate ? PTXInstruction::satfinite : 0;
-				ins.a = vector(aType, PTXOperand::b32, PTXOperand::v1, 2, 1);
-				ins.b = vector(bType, PTXOperand::b32, PTXOperand::v1, 3, 1);
-				ins.c = ins.d = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v2, 0, 2);
-				const PTXS32 base = sign > 0 ? INT32_MAX - 100 : INT32_MIN + 100;
+				ins.a = vector(aType, PTXOperand::b32, k64 ? PTXOperand::v4 : wide ? PTXOperand::v2 : PTXOperand::v1, 4, k64 ? 4 : wide ? 2 : 1);
+				ins.b = vector(bType, PTXOperand::b32, k64 ? PTXOperand::v2 : PTXOperand::v1, 8, k64 ? 2 : 1);
+				ins.c = ins.d = vector(PTXOperand::s32, PTXOperand::s32, wide ? PTXOperand::v4 : PTXOperand::v2, 0, wide ? 4 : 2);
+				if (k64) for (auto invalidType : {PTXOperand::s8, PTXOperand::u8, PTXOperand::f16, PTXOperand::tf32}) {
+					PTXInstruction invalid = ins;
+					invalid.a.type = invalid.b.type = invalidType;
+					if (invalid.valid().empty()) { status << "m16n8k64 accepted non-int4 inputs\n"; return false; }
+				}
+				const PTXS32 base = sign > 0 ? INT32_MAX - 200 : INT32_MIN + 200;
 				auto decode = [](int value, PTXOperand::DataType type) { return type == PTXOperand::s4 && value >= 8 ? value - 16 : value; };
 				cta->reset();
 				for (int lane = 0; lane < 32; ++lane) {
 					const int group = lane / 4, t = lane % 4;
 					PTXU32 a = 0, b = 0;
+					PTXU32 upperA = 0, upperB = 0;
 					for (int i = 0; i < 8; ++i) {
-						a |= (PTXU32)((group + 8 * t + i) % 16) << (4 * i);
-						b |= (PTXU32)((3 * (8 * t + i) + group) % 16) << (4 * i);
+						a |= (PTXU32)((group + 8 * t + i + (t >= 2 ? 3 : 0)) % 16) << (4 * i);
+						b |= (PTXU32)((3 * (8 * t + i) + group + (t >= 2 ? 5 : 0)) % 16) << (4 * i);
+						upperA |= (PTXU32)((group + 8 * t + i + (t >= 2 ? 3 : 0) + 6) % 16) << (4 * i);
+						upperB |= (PTXU32)((3 * (8 * t + i) + group + (t >= 2 ? 5 : 0) + 10) % 16) << (4 * i);
 					}
-					cta->setRegAsB32(lane, 2, a); cta->setRegAsB32(lane, 3, b);
-					for (int i = 0; i < 2; ++i) cta->setRegAsS32(lane, i, base + group * 8 + 2 * t + i);
+					cta->setRegAsB32(lane, 4, a); cta->setRegAsB32(lane, 8, b);
+					if (wide) cta->setRegAsB32(lane, 5, a ^ 0x88888888u);
+					if (k64) {
+						cta->setRegAsB32(lane, 6, upperA); cta->setRegAsB32(lane, 7, upperA ^ 0x88888888u);
+						cta->setRegAsB32(lane, 9, upperB);
+					}
+					for (int i = 0; i < (wide ? 4 : 2); ++i) cta->setRegAsS32(lane, i,
+						base + (group + (i >= 2 ? 8 : 0)) * 8 + 2 * t + (i & 1));
 				}
 				cta->eval_Mma(cta->getActiveContext(), ins);
-				for (int lane = 0; lane < 32; ++lane) for (int i = 0; i < 2; ++i) {
-					const int row = lane / 4, col = 2 * (lane % 4) + i;
+				for (int lane = 0; lane < 32; ++lane) for (int i = 0; i < (wide ? 4 : 2); ++i) {
+					const int row = lane / 4 + (i >= 2 ? 8 : 0), col = 2 * (lane % 4) + (i & 1);
 					int64_t expected = (int64_t)base + row * 8 + col;
-					for (int k = 0; k < 32; ++k) expected += decode((row + k) % 16, aType) * decode((3 * k + col) % 16, bType);
+					for (int k = 0; k < (k64 ? 64 : 32); ++k) expected +=
+						decode((row + k + (k / 16) * 3) % 16, aType) *
+						decode((3 * k + col + (k / 16) * 5) % 16, bType);
 					if (saturate) expected = std::max<int64_t>(INT32_MIN, std::min<int64_t>(INT32_MAX, expected));
 					const PTXS32 want = hydrazine::bit_cast<PTXS32>((PTXU32)expected);
-					if (cta->getRegAsS32(lane, i) != want) { status << "m8n8k32 int4 mismatch lane " << lane << " register " << i << "\n"; return false; }
+					if (cta->getRegAsS32(lane, i) != want) { status << "int4 mma shape " << shape << " mismatch lane " << lane << " register " << i << "\n"; return false; }
 				}
 			}
 		}

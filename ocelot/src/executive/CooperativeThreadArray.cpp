@@ -5156,9 +5156,12 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					}
 				}
 			}
-			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K32) {
-				ir::PTXS32 A[16][32] = {};
-				ir::PTXS32 B[32][8] = {};
+			else if ((instr.mmaShape == ir::PTXInstruction::MmaM16N8K32 && !subByteInput) ||
+				instr.mmaShape == ir::PTXInstruction::MmaM16N8K64) {
+				const int elementsPerRegister = subByteInput ? 8 : 4;
+				const int kCount = elementsPerRegister * 8;
+				ir::PTXS32 A[16][64] = {};
+				ir::PTXS32 B[64][8] = {};
 				ir::PTXS32 C[16][8] = {};
 
 				for (int lane = 0; lane < 32; ++lane) {
@@ -5166,18 +5169,20 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					int groupID = lane >> 2;
 					int threadInGroup = lane & 3;
 
-					for (int i = 0; i < 16; ++i) {
-						int row = (i & 4) ? groupID + 8 : groupID;
-						int col = threadInGroup * 4 + (i & 3) + (i >= 8 ? 16 : 0);
-						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
-						A[row][col] = signExtend(reg, i & 3, instr.a.type);
+					for (int i = 0; i < 4 * elementsPerRegister; ++i) {
+						int row = ((i / elementsPerRegister) & 1) ? groupID + 8 : groupID;
+						int col = threadInGroup * elementsPerRegister + i % elementsPerRegister +
+							(i >= 2 * elementsPerRegister ? kCount / 2 : 0);
+						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / elementsPerRegister]);
+						A[row][col] = signExtend(reg, i % elementsPerRegister, instr.a.type);
 					}
 
-					for (int i = 0; i < 8; ++i) {
-						int row = threadInGroup * 4 + (i & 3) + (i >= 4 ? 16 : 0);
+					for (int i = 0; i < 2 * elementsPerRegister; ++i) {
+						int row = threadInGroup * elementsPerRegister + i % elementsPerRegister +
+							(i >= elementsPerRegister ? kCount / 2 : 0);
 						int col = groupID;
-						ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[i / 4]);
-						B[row][col] = signExtend(reg, i & 3, instr.b.type);
+						ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[i / elementsPerRegister]);
+						B[row][col] = signExtend(reg, i % elementsPerRegister, instr.b.type);
 					}
 
 					for (int i = 0; i < 4; ++i) {
@@ -5191,7 +5196,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 				for (int row = 0; row < 16; ++row) {
 					for (int col = 0; col < 8; ++col) {
 						int64_t acc = C[row][col];
-						for (int k = 0; k < 32; ++k) {
+						for (int k = 0; k < kCount; ++k) {
 							acc += static_cast<int64_t>(A[row][k]) *
 								static_cast<int64_t>(B[k][col]);
 						}
@@ -5210,9 +5215,12 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					}
 				}
 			}
-			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K16) {
-				ir::PTXS32 A[16][16] = {};
-				ir::PTXS32 B[16][8] = {};
+			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K16 ||
+				(instr.mmaShape == ir::PTXInstruction::MmaM16N8K32 && subByteInput)) {
+				const int elementsPerRegister = subByteInput ? 8 : 4;
+				const int kCount = elementsPerRegister * 4;
+				ir::PTXS32 A[16][32] = {};
+				ir::PTXS32 B[32][8] = {};
 				ir::PTXS32 C[16][8] = {};
 
 				for (int lane = 0; lane < 32; ++lane) {
@@ -5220,15 +5228,15 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					int groupID = lane >> 2;
 					int threadInGroup = lane & 3;
 
-					for (int i = 0; i < 8; ++i) {
-						int row = (i < 4) ? groupID : groupID + 8;
-						int col = threadInGroup * 4 + (i & 3);
-						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / 4]);
-						A[row][col] = signExtend(reg, i & 3, instr.a.type);
+					for (int i = 0; i < 2 * elementsPerRegister; ++i) {
+						int row = (i < elementsPerRegister) ? groupID : groupID + 8;
+						int col = threadInGroup * elementsPerRegister + i % elementsPerRegister;
+						ir::PTXU32 reg = operandAsU32(threadID, instr.a.array[i / elementsPerRegister]);
+						A[row][col] = signExtend(reg, i % elementsPerRegister, instr.a.type);
 					}
 
-					for (int i = 0; i < 4; ++i) {
-						int row = threadInGroup * 4 + i;
+					for (int i = 0; i < elementsPerRegister; ++i) {
+						int row = threadInGroup * elementsPerRegister + i;
 						int col = groupID;
 						ir::PTXU32 reg = operandAsU32(threadID, instr.b.array[0]);
 						B[row][col] = signExtend(reg, i, instr.b.type);
@@ -5245,7 +5253,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 				for (int row = 0; row < 16; ++row) {
 					for (int col = 0; col < 8; ++col) {
 						int64_t acc = C[row][col];
-						for (int k = 0; k < 16; ++k) {
+						for (int k = 0; k < kCount; ++k) {
 							acc += static_cast<int64_t>(A[row][k]) *
 								static_cast<int64_t>(B[k][col]);
 						}

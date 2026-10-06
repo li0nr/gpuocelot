@@ -1498,13 +1498,19 @@ std::string ir::PTXInstruction::valid() const {
 				break;
 			}
 			if (a.type == PTXOperand::s4 || a.type == PTXOperand::u4) {
-				if (mmaShape != MmaM8N8K32 || (b.type != PTXOperand::s4 && b.type != PTXOperand::u4) ||
+				const bool small = mmaShape == MmaM8N8K32;
+				const bool k64 = mmaShape == MmaM16N8K64;
+				if ((!small && !k64 && mmaShape != MmaM16N8K32) || (b.type != PTXOperand::s4 && b.type != PTXOperand::u4) ||
 					type != PTXOperand::s32 || c.type != type || d.type != type || (modifier & ~satfinite))
 					return "unsupported sub-byte mma shape/type/modifier combination";
+				const unsigned aCount = small ? 1u : k64 ? 4u : 2u;
+				const unsigned bCount = k64 ? 2u : 1u;
+				const unsigned cdCount = small ? 2u : 4u;
 				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
 					const bool input = operand == &a || operand == &b;
-					if (operand->vec != (input ? PTXOperand::v1 : PTXOperand::v2) || operand->array.size() != (input ? 1u : 2u))
-						return "invalid m8n8k32 fragment size";
+					const unsigned count = operand == &a ? aCount : operand == &b ? bCount : cdCount;
+					if (operand->vec != static_cast<PTXOperand::Vec>(count) || operand->array.size() != count)
+						return "invalid sub-byte mma fragment size";
 					for (const auto& element : operand->array)
 						if (input ? element.type != PTXOperand::b32 : !PTXOperand::relaxedValid(type, element.type)) return "invalid sub-byte mma register type";
 				}
@@ -3042,6 +3048,7 @@ std::string ir::PTXInstruction::toString() const {
 			std::string shapeName;
 			switch (mmaShape) {
 			case MmaM8N8K32:  shapeName = "8n8k32";  break;
+			case MmaM16N8K64: shapeName = "16n8k64"; break;
 			case MmaM8N8K4:   shapeName = "8n8k4";   break;
 			case MmaM16N8K4:  shapeName = "16n8k4";  break;
 			case MmaM16N8K8:  shapeName = "16n8k8";  break;

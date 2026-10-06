@@ -2032,6 +2032,8 @@ namespace parser
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
 		statement.instruction.mmaShape = shapeToken == TOKEN_M8N8K32
 			? ir::PTXInstruction::MmaM8N8K32
+			: shapeToken == TOKEN_M16N8K64
+			? ir::PTXInstruction::MmaM16N8K64
 			: shapeToken == TOKEN_M16N8K8
 			? ir::PTXInstruction::MmaM16N8K8
 			: shapeToken == TOKEN_M8N8K4

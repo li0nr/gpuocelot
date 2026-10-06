@@ -376,6 +376,7 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".s4" { yylval->value = TOKEN_S4; return TOKEN_S4; }
 ".u4" { yylval->value = TOKEN_U4; return TOKEN_U4; }
 ".m8n8k32" { yylval->value = TOKEN_M8N8K32; return TOKEN_M8N8K32; }
+".m16n8k64" { yylval->value = TOKEN_M16N8K64; return TOKEN_M16N8K64; }
 ".s8"				            { yylval->value = TOKEN_S8; return TOKEN_S8; }
 ".s16"			            	{ yylval->value = TOKEN_S16; return TOKEN_S16; }
 ".s64"			            	{ yylval->value = TOKEN_S64; return TOKEN_S64; }
