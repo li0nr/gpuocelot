@@ -502,6 +502,8 @@ ir::PTXInstruction::PTXInstruction( Opcode op, const PTXOperand& _d,
 	branchTargetInstruction = 0;
 	vec = PTXOperand::v1;
 	mmaShape = MmaShape_Invalid;
+	mmaAColumnMajor = false;
+	mmaBColumnMajor = true;
 	pg.condition = PTXOperand::PT;
 	pg.type = PTXOperand::pred;
 	barrierOperation = BarSync;
@@ -1446,9 +1448,44 @@ std::string ir::PTXInstruction::valid() const {
 			break;
 		}
 		case Mma: {
+			if ((mmaAColumnMajor || !mmaBColumnMajor) &&
+				(mmaShape != MmaM8N8K4 || a.type != PTXOperand::f16)) {
+				return "this mma form requires row.col layouts";
+			}
+			if (a.type == PTXOperand::f64) {
+				if (mmaShape != MmaM8N8K4 || type != PTXOperand::f64 ||
+					b.type != type || c.type != type || d.type != type ||
+					(modifier & ~(rn | rz | rm | rp))) return "invalid f64 mma shape/type/modifier";
+				if (modifier && (modifier & (modifier - 1))) {
+					return "f64 mma accepts only one rounding modifier";
+				}
+				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
+					const int count = (operand == &a || operand == &b) ? 1 : 2;
+					if (operand->array.size() != count || operand->vec != (count == 1 ? PTXOperand::v1 : PTXOperand::v2))
+						return "invalid f64 mma fragment size";
+					for (const auto& element : operand->array)
+						if (!PTXOperand::relaxedValid(type, element.type)) return "invalid f64 mma register type";
+				}
+				break;
+			}
+			if (mmaShape == MmaM8N8K4) {
+				if (type != PTXOperand::f16 || a.type != type || b.type != type || c.type != type || d.type != type || modifier)
+					return "unsupported m8n8k4 type/modifier combination";
+				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
+					const bool input = operand == &a || operand == &b;
+					if (operand->vec != (input ? PTXOperand::v2 : PTXOperand::v4) || operand->array.size() != (input ? 2u : 4u))
+						return "invalid m8n8k4 f16 fragment size";
+					for (const auto& element : operand->array)
+						if (element.type != PTXOperand::b32 && element.type != PTXOperand::f16x2) return "invalid packed f16 mma register type";
+				}
+				break;
+			}
 			const bool intInput = a.type == PTXOperand::s8 ||
 				a.type == PTXOperand::u8;
 			if (intInput) {
+				if (modifier & ~satfinite) {
+					return "integer mma accepts only satfinite";
+				}
 				if (mmaShape != MmaM16N8K16 && mmaShape != MmaM8N8K16 &&
 					mmaShape != MmaM16N8K32) {
 					return "integer mma requires m8n8k16, m16n8k16, or m16n8k32";
@@ -1511,11 +1548,16 @@ std::string ir::PTXInstruction::valid() const {
 				}
 				break;
 			}
+			if (modifier) {
+				return "f16/bf16/tf32 mma does not accept modifiers";
+			}
 			const bool m16n8k8 = mmaShape == MmaM16N8K8;
+			const bool m16n8k4 = mmaShape == MmaM16N8K4;
 			const bool tf32Input = a.type == PTXOperand::tf32;
 			const bool halfAccumulator = type == PTXOperand::f16;
-			if (mmaShape != MmaM16N8K8 && mmaShape != MmaM16N8K16) {
-				return "floating-point mma requires m16n8k8 or m16n8k16";
+			if ((m16n8k4 && !tf32Input) ||
+				(!m16n8k4 && !m16n8k8 && mmaShape != MmaM16N8K16)) {
+				return "unsupported floating-point mma shape/type combination";
 			}
 			if (!halfAccumulator && type != PTXOperand::f32) {
 				return "mma requires f16 or f32 accumulators";
@@ -1524,9 +1566,9 @@ std::string ir::PTXInstruction::valid() const {
 				a.type != PTXOperand::tf32) {
 				return "mma A type must be f16, bf16, or tf32";
 			}
-			if (tf32Input && (!m16n8k8 || type != PTXOperand::f32 ||
+			if (tf32Input && ((!m16n8k8 && !m16n8k4) || type != PTXOperand::f32 ||
 				b.type != PTXOperand::tf32)) {
-				return "tf32 mma requires m16n8k8 with f32 accumulators";
+				return "tf32 mma requires m16n8k4 or m16n8k8 with f32 accumulators";
 			}
 			if (halfAccumulator && a.type != PTXOperand::f16) {
 				return "f16 mma accumulators require f16 inputs";
@@ -1541,22 +1583,20 @@ std::string ir::PTXInstruction::valid() const {
 			const PTXOperand::Vec accumulatorVec = halfAccumulator
 				? PTXOperand::v2 : PTXOperand::v4;
 			const unsigned int accumulatorRegisters = halfAccumulator ? 2 : 4;
-			const bool compactInputFragment = m16n8k8 && !tf32Input;
+			const bool compactInputFragment = m16n8k4 || (m16n8k8 && !tf32Input);
 			const PTXOperand::Vec inputAVec = compactInputFragment
 				? PTXOperand::v2 : PTXOperand::v4;
 			const PTXOperand::Vec inputBVec = compactInputFragment
 				? PTXOperand::v1 : PTXOperand::v2;
 			if (d.vec != accumulatorVec || c.vec != accumulatorVec ||
 				a.vec != inputAVec || b.vec != inputBVec) {
-				return m16n8k8 ? "mma.m16n8k8 has invalid fragment sizes"
-					: "mma.m16n8k16 has invalid fragment sizes";
+				return "mma has invalid fragment sizes";
 			}
 			if (d.array.size() != accumulatorRegisters ||
 				c.array.size() != accumulatorRegisters ||
 				a.array.size() != (compactInputFragment ? 2u : 4u) ||
 				b.array.size() != (compactInputFragment ? 1u : 2u)) {
-				return m16n8k8 ? "mma.m16n8k8 has invalid fragment register counts"
-					: "mma.m16n8k16 has invalid fragment register counts";
+				return "mma has invalid fragment register counts";
 			}
 			for (PTXOperand::Array::const_iterator element = a.array.begin();
 				element != a.array.end(); ++element) {
@@ -2971,6 +3011,8 @@ std::string ir::PTXInstruction::toString() const {
 		case Mma: {
 			std::string shapeName;
 			switch (mmaShape) {
+			case MmaM8N8K4:   shapeName = "8n8k4";   break;
+			case MmaM16N8K4:  shapeName = "16n8k4";  break;
 			case MmaM16N8K8:  shapeName = "16n8k8";  break;
 			case MmaM8N8K16:  shapeName = "8n8k16";  break;
 			case MmaM16N8K32: shapeName = "16n8k32"; break;
@@ -2979,12 +3021,14 @@ std::string ir::PTXInstruction::toString() const {
 			std::string result = guard() +
 				"mma.sync.aligned.m" +
 				shapeName +
-				".row.col." +
+				(mmaAColumnMajor ? ".col" : ".row") +
+				(mmaBColumnMajor ? ".col." : ".row.") +
 				((modifier & satfinite) ? "satfinite." : "") +
 				PTXOperand::toString(type) + "." +
 				PTXOperand::toString(a.type) + "." +
 				PTXOperand::toString(b.type) + "." +
-				PTXOperand::toString(c.type) + " " +
+				PTXOperand::toString(c.type) +
+				(type == PTXOperand::f64 && modifier ? "." + toString((Modifier)modifier) : "") + " " +
 				d.toString() + ", " + a.toString() + ", " +
 				b.toString() + ", " + c.toString();
 			return result;

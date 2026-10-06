@@ -134,7 +134,7 @@
 %token<value> TOKEN_TRAP TOKEN_CLAMP TOKEN_ZERO TOKEN_WRAP
 
 %token<value> TOKEN_ARRIVE TOKEN_RED TOKEN_POPC TOKEN_SYNC TOKEN_ALIGNED
-%token<value> TOKEN_M16N8K8 TOKEN_M16N8K16 TOKEN_M8N8K16 TOKEN_M16N8K32 TOKEN_ROW TOKEN_COL
+%token<value> TOKEN_M8N8K4 TOKEN_M16N8K4 TOKEN_M16N8K8 TOKEN_M16N8K16 TOKEN_M8N8K16 TOKEN_M16N8K32 TOKEN_ROW TOKEN_COL
 
 %token<value> TOKEN_BALLOT
 
@@ -143,7 +143,7 @@
 %token<value> TOKEN_FINITE TOKEN_INFINITE TOKEN_NUMBER TOKEN_NOT_A_NUMBER
 %token<value> TOKEN_NORMAL TOKEN_SUBNORMAL
 
-%type<value> mmaShape mmaAccumulatorTypeId mmaInputTypeId mmaIntTypeId
+%type<value> mmaLayout mmaShape mmaAccumulatorTypeId mmaInputTypeId mmaIntTypeId
 
 %token<value> TOKEN_DECIMAL_CONSTANT
 
@@ -695,21 +695,30 @@ opcode : OPCODE_COS | OPCODE_SQRT | OPCODE_ADD | OPCODE_RSQRT | OPCODE_ADDC
 	| OPCODE_BFI | OPCODE_BMSK | OPCODE_FNS | OPCODE_TANH | OPCODE_TESTP | OPCODE_TLD4
 	| OPCODE_PREFETCH | OPCODE_PREFETCHU;
 
-mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape mmaLayout mmaLayout
 	mmaAccumulatorTypeId mmaInputTypeId mmaInputTypeId mmaAccumulatorTypeId
 	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
 {
-	state.mma( $<value>4, $<value>7, $<value>8, $<value>9, $<value>10 );
+	state.mma( $<value>4, $<value>7, $<value>8, $<value>9, $<value>10,
+		$<value>5 == TOKEN_COL, $<value>6 == TOKEN_COL );
 };
 
-mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape TOKEN_ROW TOKEN_COL
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape mmaLayout mmaLayout
 	optionalSatfinite TOKEN_S32 mmaIntTypeId mmaIntTypeId TOKEN_S32
 	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
 {
-	state.mma( $<value>4, $<value>8, $<value>9, $<value>10, $<value>11 );
+	state.mma( $<value>4, $<value>8, $<value>9, $<value>10, $<value>11,
+		$<value>5 == TOKEN_COL, $<value>6 == TOKEN_COL );
 };
 
-mmaShape : TOKEN_M16N8K8 | TOKEN_M16N8K16 | TOKEN_M8N8K16 | TOKEN_M16N8K32;
+mma : OPCODE_MMA TOKEN_SYNC TOKEN_ALIGNED mmaShape mmaLayout mmaLayout
+	TOKEN_F64 TOKEN_F64 TOKEN_F64 TOKEN_F64 optionalFloatRounding
+	arrayOperand ',' arrayOperand ',' arrayOperand ',' arrayOperand ';'
+{ state.mma($<value>4, $<value>7, $<value>8, $<value>9, $<value>10,
+	$<value>5 == TOKEN_COL, $<value>6 == TOKEN_COL); };
+mmaLayout : TOKEN_ROW | TOKEN_COL;
+
+mmaShape : TOKEN_M8N8K4 | TOKEN_M16N8K4 | TOKEN_M16N8K8 | TOKEN_M16N8K16 | TOKEN_M8N8K16 | TOKEN_M16N8K32;
 
 mmaAccumulatorTypeId : TOKEN_F16 | TOKEN_F32;
 

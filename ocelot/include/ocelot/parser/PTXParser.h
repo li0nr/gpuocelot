@@ -275,7 +275,7 @@ namespace parser
 					void instruction( const std::string& opcode );
 					void dotType( int token );
 					void lop3();
-					void mma( int shape, int accumulatorType, int aType, int bType, int cType );
+					void mma( int shape, int accumulatorType, int aType, int bType, int cType, bool aColumnMajor = false, bool bColumnMajor = true );
 					void tex( int dataType );
 					void tld4( int dataType );
 					void callPrototypeName( const std::string& identifier );

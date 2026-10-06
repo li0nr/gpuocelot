@@ -174,6 +174,8 @@ namespace ir {
 			MmaM16N8K16,
 			MmaM8N8K16,
 			MmaM16N8K32,
+			MmaM16N8K4,
+			MmaM8N8K4,
 			MmaShape_Invalid
 		};
 		
@@ -465,6 +467,8 @@ namespace ir {
 
 		/*! Shape for MMA instructions */
 		MmaShape mmaShape;
+		bool mmaAColumnMajor;
+		bool mmaBColumnMajor;
 
 		/*! Flag containing one or more floating-point modifiers */
 		unsigned int modifier;

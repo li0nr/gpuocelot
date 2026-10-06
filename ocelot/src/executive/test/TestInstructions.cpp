@@ -5209,14 +5209,15 @@ public:
 
 	bool test_MmaFloatShapes() {
 		// PTX 8.0: m8n8k16/m16n8k32 are integer-only shapes.
-		for (const char* shape : {"m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32"}) {
+		for (const char* shape : {"m16n8k4", "m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32"}) {
 			for (const char* input : {"f16", "bf16", "tf32"}) {
 				for (const char* accumulator : {"f16", "f32"}) {
 					const bool small = std::string(shape) == "m16n8k8";
+					const bool k4 = std::string(shape) == "m16n8k4";
 					const bool tf32 = std::string(input) == "tf32";
 					const bool half = std::string(accumulator) == "f16";
-					const bool legalShape = small || std::string(shape) == "m16n8k16";
-					const bool legal = legalShape && (!tf32 || small)
+					const bool legalShape = k4 ? tf32 : small || std::string(shape) == "m16n8k16";
+					const bool legal = legalShape && (!tf32 || small || k4)
 						&& (!half || std::string(input) == "f16");
 					std::stringstream ptx;
 					ptx << ".version 8.0\n.target sm_86\n.address_size 64\n"
@@ -5227,13 +5228,17 @@ public:
 						<< "mma.sync.aligned." << shape << ".row.col."
 						<< accumulator << "." << input << "." << input << "."
 						<< accumulator << (half ? " {%d0,%d1}, " : " {%d0,%d1,%d2,%d3}, ")
-						<< (small && !tf32 ? "{%r4,%r5}, {%r8}, "
+						<< (k4 || (small && !tf32) ? "{%r4,%r5}, {%r8}, "
 							: "{%r4,%r5,%r6,%r7}, {%r8,%r9}, ")
 						<< (half ? "{%c0,%c1};\n" : "{%c0,%c1,%c2,%c3};\n")
 						<< "ret;\n}\n";
 					Module parsed;
 					bool accepted = true;
-					try { parsed.load(ptx); }
+					try {
+						parsed.load(ptx);
+						std::stringstream printed; parsed.write(printed);
+						Module roundtrip; roundtrip.load(printed);
+					}
 					catch (const std::exception&) { accepted = false; }
 					if (accepted != legal) {
 						status << "mma " << shape << " " << input << " -> "
@@ -5252,7 +5257,7 @@ public:
 		ins.opcode = PTXInstruction::Mma;
 		ins.mmaShape = PTXInstruction::MmaM16N8K16;
 		ins.type = PTXOperand::f32;
-		ins.modifier = PTXInstruction::rn;
+		ins.modifier = 0;
 
 		auto vector = [this](PTXOperand::DataType type,
 			PTXOperand::DataType elementType, PTXOperand::Vec vec,
@@ -5281,6 +5286,31 @@ public:
 		if (!ins.valid().empty()) {
 			status << "mma rejected f16x2 input fragments: " << ins.valid() << "\n";
 			return false;
+		}
+		auto rejects = [&](const PTXInstruction& invalid) {
+			bool rejected = false;
+			try { cta->eval_Mma(cta->getActiveContext(), invalid); }
+			catch (const RuntimeException&) { rejected = true; }
+			if (!rejected || invalid.valid().empty()) {
+				status << "invalid mma accepted (shape " << invalid.mmaShape
+					<< "): " << invalid.toString() << "\n";
+				return false;
+			}
+			return true;
+		};
+		for (auto shape : {PTXInstruction::MmaShape_Invalid,
+			PTXInstruction::MmaM8N8K16, PTXInstruction::MmaM16N8K32}) {
+			PTXInstruction invalid = ins;
+			invalid.mmaShape = shape;
+			if (!rejects(invalid)) return false;
+		}
+		for (int bad = 0; bad < 4; ++bad) {
+			PTXInstruction invalid = ins;
+			if (bad == 0) invalid.a.type = PTXOperand::s32;
+			if (bad == 1) invalid.b.type = PTXOperand::bf16;
+			if (bad == 2) invalid.modifier = PTXInstruction::rn;
+			if (bad == 3) invalid.modifier = PTXInstruction::satfinite;
+			if (!rejects(invalid)) return false;
 		}
 		PTXInstruction tf32 = ins;
 		tf32.mmaShape = PTXInstruction::MmaM16N8K8;
@@ -5387,6 +5417,156 @@ public:
 			return false;
 		}
 
+		// TF32 m16n8k4: A(r,k)=r-2k+1, B(k,c)=3k+c-2.
+		ins.mmaShape = PTXInstruction::MmaM16N8K4;
+		ins.a = vector(PTXOperand::tf32, PTXOperand::b32, PTXOperand::v2, 0, 2);
+		ins.b = vector(PTXOperand::tf32, PTXOperand::b32, PTXOperand::v1, 4, 1);
+		if (!ins.valid().empty()) { status << ins.valid() << "\n"; return false; }
+		cta->reset();
+		for (int lane = 0; lane < 32; ++lane) {
+			const int group = lane >> 2, t = lane & 3;
+			cta->setRegAsF32(lane, 0, group - 2 * t + 1);
+			cta->setRegAsF32(lane, 1, group + 8 - 2 * t + 1);
+			cta->setRegAsF32(lane, 4, 3 * t + group - 2);
+			for (int i = 0; i < 4; ++i)
+				cta->setRegAsF32(lane, 6 + i, (group + (i >= 2 ? 8 : 0)) * 8 + t * 2 + (i & 1));
+		}
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for (int lane = 0; lane < 32; ++lane) {
+			for (int i = 0; i < 4; ++i) {
+				const int row = (lane >> 2) + (i >= 2 ? 8 : 0), col = (lane & 3) * 2 + (i & 1);
+				int expected = row * 8 + col;
+				for (int k = 0; k < 4; ++k) expected += (row - 2 * k + 1) * (3 * k + col - 2);
+				if (cta->getRegAsF32(lane, i) != expected) {
+					status << "mma.m16n8k4.tf32 incorrect lane " << lane << " register " << i << "\n";
+					return false;
+				}
+			}
+		}
+		ins.mmaShape = PTXInstruction::MmaM8N8K4;
+		ins.type = PTXOperand::f64;
+		ins.a = vector(PTXOperand::f64, PTXOperand::f64, PTXOperand::v1, 0, 1);
+		ins.b = vector(PTXOperand::f64, PTXOperand::f64, PTXOperand::v1, 4, 1);
+		ins.c = vector(PTXOperand::f64, PTXOperand::f64, PTXOperand::v2, 6, 2);
+		ins.d = vector(PTXOperand::f64, PTXOperand::f64, PTXOperand::v2, 0, 2);
+		for (auto* operand : {&ins.a, &ins.b, &ins.c, &ins.d}) for (auto& element : operand->array) element.identifier = "%f" + std::to_string(element.reg);
+		PTXInstruction conflictingRounding = ins;
+		conflictingRounding.modifier = PTXInstruction::rn | PTXInstruction::rz;
+		if (!rejects(conflictingRounding)) return false;
+		for (int mode : {0, (int)PTXInstruction::rn, (int)PTXInstruction::rz, (int)PTXInstruction::rm, (int)PTXInstruction::rp}) {
+			ins.modifier = mode;
+			if (!ins.valid().empty()) { status << ins.valid() << "\n"; return false; }
+			std::stringstream source;
+			source << ".version 8.0\n.target sm_86\n.entry fp64() { .reg .f64 %f<8>; " << ins.toString() << "; ret; }";
+			Module parsed; parsed.load(source);
+			std::stringstream printed; parsed.write(printed); Module roundtrip; roundtrip.load(printed);
+			for (int scenario : {0, 1, -1}) {
+				cta->reset();
+				for (int lane = 0; lane < 32; ++lane) {
+					const int row = lane >> 2, k = lane & 3;
+					cta->setRegAsF64(lane, 0, scenario ? (k == 0 ? scenario * 0x1p-53 : 0) : row - 2 * k + 1);
+					cta->setRegAsF64(lane, 4, scenario ? 1 : 3 * k + row - 2);
+					for (int i = 0; i < 2; ++i) cta->setRegAsF64(lane, 6 + i, scenario ? scenario : row * 8 + 2 * k + i);
+				}
+				cta->eval_Mma(cta->getActiveContext(), ins);
+				for (int lane = 0; lane < 32; ++lane) for (int i = 0; i < 2; ++i) {
+					const int row = lane >> 2, col = 2 * (lane & 3) + i;
+					double expected = scenario ? scenario : row * 8 + col;
+					if (!scenario) for (int k = 0; k < 4; ++k) expected += (row - 2 * k + 1) * (3 * k + col - 2);
+					else if ((scenario > 0 && mode == PTXInstruction::rp) || (scenario < 0 && mode == PTXInstruction::rm)) expected = std::nextafter(expected, 2 * expected);
+					if (cta->getRegAsF64(lane, i) != expected) { status << "f64 mma mismatch lane " << lane << " mode " << mode << "\n"; return false; }
+				}
+			}
+		}
+
+		PTXInstruction wrongLayout = ins;
+		wrongLayout.mmaAColumnMajor = true;
+		if (wrongLayout.valid().empty()) { status << "f64 mma accepted col.col\n"; return false; }
+		ins.mmaShape = PTXInstruction::MmaM16N8K8;
+		bool rejectedF64Shape = false;
+		try { cta->eval_Mma(cta->getActiveContext(), ins); }
+		catch (RuntimeException&) { rejectedF64Shape = true; }
+		if (!rejectedF64Shape) { status << "unsupported f64 mma shape executed\n"; return false; }
+		ins.mmaShape = PTXInstruction::MmaM8N8K4;
+
+		// Four different products, nonuniform rows/columns/K, and A/D aliasing.
+		ins.modifier = 0;
+		ins.type = PTXOperand::f16;
+		ins.a = vector(PTXOperand::f16, PTXOperand::f16x2, PTXOperand::v2, 0, 2);
+		ins.b = vector(PTXOperand::f16, PTXOperand::b32, PTXOperand::v2, 4, 2);
+		ins.c = vector(PTXOperand::f16, PTXOperand::f16x2, PTXOperand::v4, 6, 4);
+		ins.d = vector(PTXOperand::f16, PTXOperand::b32, PTXOperand::v4, 0, 4);
+		if (!ins.valid().empty()) { status << ins.valid() << "\n"; return false; }
+		for (auto* operand : {&ins.a, &ins.b, &ins.c, &ins.d}) for (auto& element : operand->array) element.identifier = "%h" + std::to_string(element.reg);
+		for (int bad : {0, 1, 2}) {
+			PTXInstruction invalid = ins;
+			if (bad == 0) invalid.a.type = PTXOperand::bf16;
+			if (bad == 1) invalid.c.array.pop_back();
+			if (bad == 2) invalid.modifier = PTXInstruction::satfinite;
+			if (invalid.valid().empty()) { status << "invalid legacy f16 mma accepted\n"; return false; }
+			bool rejected = false;
+			try { cta->eval_Mma(cta->getActiveContext(), invalid); }
+			catch (RuntimeException&) { rejected = true; }
+			if (!rejected) { status << "invalid legacy f16 mma executed\n"; return false; }
+		}
+		std::stringstream source;
+		source << ".version 8.0\n.target sm_86\n.entry fp16_884() { .reg .b32 %h<10>; " << ins.toString() << "; ret; }";
+		Module parsed; parsed.load(source);
+		std::stringstream printed; parsed.write(printed); Module roundtrip; roundtrip.load(printed);
+		cta->reset();
+		for (int lane = 0; lane < 32; ++lane) {
+			const int group = (lane / 4) % 4, row = lane % 4 + (lane / 16) * 4;
+			for (int i = 0; i < 2; ++i) {
+				const PTXU32 packed = f16Values[group + row + 2 * i + 1] | ((PTXU32)f16Values[group + row + 2 * i + 2] << 16);
+				cta->setRegAsB32(lane, i, packed);
+				cta->setRegAsB32(lane, 4 + i, f16Values[group + row + 4 * i] | ((PTXU32)f16Values[group + row + 4 * i + 2] << 16));
+			}
+			for (int i = 0; i < 4; ++i) cta->setRegAsB32(lane, 6 + i, f16Values[row + 2 * i] | ((PTXU32)f16Values[row + 2 * i + 1] << 16));
+		}
+		cta->eval_Mma(cta->getActiveContext(), ins);
+		for (int lane = 0; lane < 32; ++lane) for (int col = 0; col < 8; ++col) {
+			const int group = (lane / 4) % 4, row = lane % 4 + (lane / 16) * 4;
+			int expected = row + col;
+			for (int k = 0; k < 4; ++k) expected += (group + row + k + 1) * (group + col + 2 * k);
+			const PTXU16 bits = (cta->getRegAsB32(lane, col / 2) >> (16 * (col & 1))) & 0xffff;
+			if (std::ldexp(1024 + (bits & 1023), (bits >> 10) - 25) != expected) {
+				status << "mma.m8n8k4.f16 mismatch lane " << lane << " column " << col << "\n"; return false;
+			}
+		}
+
+		for (int layout = 0; layout < 4; ++layout) {
+			ins.mmaAColumnMajor = layout & 1;
+			ins.mmaBColumnMajor = layout & 2;
+			std::stringstream source;
+			source << ".version 8.0\n.target sm_86\n.entry layouts() { .reg .b32 %h<10>; " << ins.toString() << "; ret; }";
+			Module parsed; parsed.load(source);
+			std::stringstream printed; parsed.write(printed); Module roundtrip; roundtrip.load(printed);
+			if (printed.str().find(ins.toString()) == std::string::npos) { status << "mma layout lost in parsing\n"; return false; }
+			cta->reset();
+			for (int lane = 0; lane < 32; ++lane) {
+				const int group = lane / 4 % 4, t = lane % 4, high = lane / 16 * 4;
+				PTXU32 packedA[2] = {}, packedB[2] = {};
+				for (int i = 0; i < 4; ++i) {
+					const int aRow = ins.mmaAColumnMajor ? i + high : t + high;
+					const int aK = ins.mmaAColumnMajor ? t : i;
+					const int bK = ins.mmaBColumnMajor ? i : t;
+					const int bCol = ins.mmaBColumnMajor ? t + high : i + high;
+					packedA[i / 2] |= (PTXU32)f16Values[group + aRow + aK + 1] << (16 * (i % 2));
+					packedB[i / 2] |= (PTXU32)f16Values[group + bCol + 2 * bK] << (16 * (i % 2));
+				}
+				for (int i = 0; i < 2; ++i) { cta->setRegAsB32(lane, i, packedA[i]); cta->setRegAsB32(lane, 4 + i, packedB[i]); }
+				for (int i = 0; i < 4; ++i) cta->setRegAsB32(lane, 6 + i, f16Values[t + high + 2 * i] | ((PTXU32)f16Values[t + high + 2 * i + 1] << 16));
+			}
+			cta->eval_Mma(cta->getActiveContext(), ins);
+			for (int lane = 0; lane < 32; ++lane) for (int col = 0; col < 8; ++col) {
+				const int group = lane / 4 % 4, row = lane % 4 + lane / 16 * 4;
+				int expected = row + col;
+				for (int k = 0; k < 4; ++k) expected += (group + row + k + 1) * (group + col + 2 * k);
+				const PTXU16 bits = cta->getRegAsB32(lane, col / 2) >> (16 * (col % 2));
+				if (std::ldexp(1024 + (bits & 1023), (bits >> 10) - 25) != expected) { status << "mma layout mismatch " << layout << "\n"; return false; }
+			}
+		}
+
 		return true;
 	}
 
@@ -5430,6 +5610,12 @@ public:
 				return false;
 			}
 
+			PTXInstruction invalid = ins;
+			invalid.modifier |= PTXInstruction::rn;
+			if (invalid.valid().empty()) {
+				status << "integer mma accepted a rounding modifier\n";
+				return false;
+			}
 			const PTXU32 aByte = static_cast<PTXU32>(aVal) & 0xffu;
 			const PTXU32 bByte = static_cast<PTXU32>(bVal) & 0xffu;
 			const PTXU32 aPacked = aByte | (aByte << 8) | (aByte << 16) | (aByte << 24);
@@ -5515,6 +5701,26 @@ public:
 			if (ins.valid() == "") {
 				status << "mma with s8 inputs and f32 accumulator "
 					"unexpectedly valid\n";
+				return false;
+			}
+		}
+
+		// Direct execution must not interpret unsupported shapes as m16n8k16.
+		for (auto shape : {PTXInstruction::MmaShape_Invalid, PTXInstruction::MmaM16N8K8}) {
+			PTXInstruction ins;
+			ins.opcode = PTXInstruction::Mma;
+			ins.mmaShape = shape;
+			ins.type = PTXOperand::s32;
+			ins.d = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 0, 4);
+			ins.c = vector(PTXOperand::s32, PTXOperand::s32, PTXOperand::v4, 6, 4);
+			ins.a = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v2, 0, 2);
+			ins.b = vector(PTXOperand::s8, PTXOperand::b32, PTXOperand::v1, 4, 1);
+			cta->reset();
+			bool rejected = false;
+			try { cta->eval_Mma(cta->getActiveContext(), ins); }
+			catch (const RuntimeException&) { rejected = true; }
+			if (!rejected) {
+				status << "integer mma executed an unsupported shape\n";
 				return false;
 			}
 		}

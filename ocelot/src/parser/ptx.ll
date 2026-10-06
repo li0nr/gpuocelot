@@ -537,6 +537,9 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
                                     return TOKEN_SYNC; }
 ".aligned"                       { yylval->value = TOKEN_ALIGNED; \
                                     return TOKEN_ALIGNED; }
+".m8n8k4"                        { yylval->value = TOKEN_M8N8K4; return TOKEN_M8N8K4; }
+".m16n8k4"                       { yylval->value = TOKEN_M16N8K4; \
+                                    return TOKEN_M16N8K4; }
 ".m16n8k8"                       { yylval->value = TOKEN_M16N8K8; \
                                     return TOKEN_M16N8K8; }
 ".m16n8k16"                      { yylval->value = TOKEN_M16N8K16; \

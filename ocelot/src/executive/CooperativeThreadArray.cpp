@@ -5000,6 +5000,11 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 	const ir::PTXInstruction &instr) {
 	trace();
 
+	const std::string error = instr.valid();
+	if (!error.empty()) {
+		throw RuntimeException(error, context.PC, instr);
+	}
+
 	if (threadCount < 32 || threadCount % 32 != 0) {
 		throw RuntimeException("mma requires complete 32-thread warps",
 			context.PC, instr);
@@ -5009,6 +5014,56 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 	const bool intInput = inputType == ir::PTXOperand::s8 ||
 		inputType == ir::PTXOperand::u8;
 
+	if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K4 &&
+		inputType == ir::PTXOperand::f64) {
+		for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
+			int participants = 0;
+			for (int lane = 0; lane < 32; ++lane) {
+				if (context.predicated(warpStart + lane, instr)) ++participants;
+			}
+			if (participants == 0) continue;
+			if (participants != 32) {
+				throw RuntimeException("mma requires all warp lanes to participate",
+					context.PC, instr);
+			}
+
+			ir::PTXF64 A[8][4], B[4][8], D[8][8];
+			for (int lane = 0; lane < 32; ++lane) {
+				const int threadID = warpStart + lane;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				A[groupID][threadInGroup] = getRegAsF64(threadID, instr.a.array[0].reg);
+				B[threadInGroup][groupID] = getRegAsF64(threadID, instr.b.array[0].reg);
+				for (int i = 0; i < 2; ++i) {
+					const int col = 2 * threadInGroup + i;
+					D[groupID][col] = getRegAsF64(threadID, instr.c.array[i].reg);
+				}
+			}
+
+			for (int row = 0; row < 8; ++row) {
+				for (int col = 0; col < 8; ++col) {
+					for (int k = 0; k < 4; ++k) {
+						D[row][col] = roundedFma(A[row][k], B[k][col],
+							D[row][col], instr.modifier);
+					}
+				}
+			}
+
+			for (int lane = 0; lane < 32; ++lane) {
+				const int threadID = warpStart + lane;
+				const int groupID = lane >> 2;
+				const int threadInGroup = lane & 3;
+				for (int i = 0; i < 2; ++i) {
+					const int col = 2 * threadInGroup + i;
+					setRegAsF64(threadID, instr.d.array[i].reg, D[groupID][col]);
+				}
+			}
+		}
+		return;
+	}
+	if (inputType == ir::PTXOperand::f64) {
+		throw RuntimeException("unsupported f64 mma shape", context.PC, instr);
+	}
 	if (intInput) {
 		// s8/u8 x s8/u8 -> s32 only (m8n8k16, m16n8k16, m16n8k32); sub-byte
 		// types (u4/s4/b1) are unimplemented.
@@ -5148,7 +5203,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					}
 				}
 			}
-			else {
+			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K16) {
 				ir::PTXS32 A[16][16] = {};
 				ir::PTXS32 B[16][8] = {};
 				ir::PTXS32 C[16][8] = {};
@@ -5202,13 +5257,56 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 					}
 				}
 			}
+			else {
+				throw RuntimeException("unsupported integer mma shape",
+					context.PC, instr);
+			}
 		}
 		return;
+	}
+
+	if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K4 &&
+		inputType == ir::PTXOperand::f16) {
+		for (int warp = 0; warp < threadCount; warp += 32) {
+			int participants = 0;
+			for (int lane = 0; lane < 32; ++lane) participants += context.predicated(warp + lane, instr);
+			if (!participants) continue;
+			if (participants != 32) throw RuntimeException("mma requires all warp lanes to participate", context.PC, instr);
+			// Four independent products: lanes 4*g..4*g+3 and 16+4*g..19+4*g.
+			ir::PTXF32 A[4][8][4], B[4][4][8], D[4][8][8];
+			for (int lane = 0; lane < 32; ++lane) {
+				const int group = (lane >> 2) & 3, row = (lane & 3) + (lane >= 16 ? 4 : 0);
+				for (int i = 0; i < 4; ++i) {
+					const int aRow = instr.mmaAColumnMajor ? i + (lane >= 16 ? 4 : 0) : row;
+					const int aCol = instr.mmaAColumnMajor ? lane & 3 : i;
+					const int bRow = instr.mmaBColumnMajor ? i : lane & 3;
+					const int bCol = instr.mmaBColumnMajor ? row : i + (lane >= 16 ? 4 : 0);
+					A[group][aRow][aCol] = mmaHalf(*this, warp + lane, instr.a.array[i / 2], i & 1, inputType);
+					B[group][bRow][bCol] = mmaHalf(*this, warp + lane, instr.b.array[i / 2], i & 1, inputType);
+				}
+				for (int i = 0; i < 8; ++i) D[group][row][i] = mmaHalf(*this, warp + lane, instr.c.array[i / 2], i & 1, inputType);
+			}
+			for (int group = 0; group < 4; ++group)
+				for (int row = 0; row < 8; ++row)
+					for (int col = 0; col < 8; ++col)
+						for (int k = 0; k < 4; ++k) D[group][row][col] = f16ToF32(toF16(std::fma(A[group][row][k], B[group][k][col], D[group][row][col]), 0));
+			for (int lane = 0; lane < 32; ++lane) {
+				const int group = (lane >> 2) & 3, row = (lane & 3) + (lane >= 16 ? 4 : 0);
+				for (int i = 0; i < 4; ++i) setRegAsB32(warp + lane, instr.d.array[i].reg,
+					toF16(D[group][row][2 * i], 0) | (static_cast<ir::PTXU32>(toF16(D[group][row][2 * i + 1], 0)) << 16));
+			}
+		}
+		return;
+	}
+
+	if (instr.mmaShape == ir::PTXInstruction::MmaM8N8K4) {
+		throw RuntimeException("unsupported m8n8k4 input type", context.PC, instr);
 	}
 
 	const bool halfAccumulator = instr.type == ir::PTXOperand::f16;
 	const bool tf32Input = inputType == ir::PTXOperand::tf32;
 	const bool m16n8k8 = instr.mmaShape == ir::PTXInstruction::MmaM16N8K8;
+	const bool m16n8k4 = instr.mmaShape == ir::PTXInstruction::MmaM16N8K4;
 	for (int warpStart = 0; warpStart < threadCount; warpStart += 32) {
 		int participants = 0;
 		for (int lane = 0; lane < 32; ++lane) {
@@ -5232,14 +5330,14 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 			int threadInGroup = lane & 3;
 
 			if (tf32Input) {
-				for (int i = 0; i < 4; ++i) {
+				for (int i = 0; i < (m16n8k4 ? 2 : 4); ++i) {
 					int row = (i & 1) ? groupID + 8 : groupID;
 					int col = threadInGroup + (i >= 2 ? 4 : 0);
 					A[row][col] = tf32FromF32(operandAsF32(threadID,
 						instr.a.array[i]));
 				}
 
-				for (int i = 0; i < 2; ++i) {
+				for (int i = 0; i < (m16n8k4 ? 1 : 2); ++i) {
 					int row = threadInGroup + (i >= 1 ? 4 : 0);
 					int col = groupID;
 					B[row][col] = tf32FromF32(operandAsF32(threadID,
@@ -5260,7 +5358,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 						instr.b.array[0], i, inputType);
 				}
 			}
-			else {
+			else if (instr.mmaShape == ir::PTXInstruction::MmaM16N8K16) {
 				for (int i = 0; i < 8; ++i) {
 					int row = (i < 2 || (i >= 4 && i < 6)) ? groupID : groupID + 8;
 					int col = threadInGroup * 2 + (i & 1) + (i >= 4 ? 8 : 0);
@@ -5290,7 +5388,7 @@ void executive::CooperativeThreadArray::eval_Mma(CTAContext &context,
 		for (int row = 0; row < 16; ++row) {
 			for (int col = 0; col < 8; ++col) {
 				D[row][col] = C[row][col];
-				for (int k = 0; k < (m16n8k8 ? 8 : 16); ++k) {
+				for (int k = 0; k < (m16n8k4 ? 4 : m16n8k8 ? 8 : 16); ++k) {
 					D[row][col] = std::fma(A[row][k], B[k][col], D[row][col]);
 					if (halfAccumulator) {
 						D[row][col] = f16ToF32(toF16(D[row][col], instr.modifier));
