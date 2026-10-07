@@ -1458,11 +1458,32 @@ std::string ir::PTXInstruction::valid() const {
 					if (element.addressMode != PTXOperand::Register) {
 						return "mma fragment elements must be registers";
 					}
+					if (element.vec != PTXOperand::v1 || !element.array.empty()) {
+						return "mma fragment elements must be scalar registers";
+					}
 				}
 			}
 			if ((mmaAColumnMajor || !mmaBColumnMajor) &&
 				(mmaShape != MmaM8N8K4 || a.type != PTXOperand::f16)) {
 				return "this mma form requires row.col layouts";
+			}
+			if (a.type == PTXOperand::b1) {
+				const bool small = mmaShape == MmaM8N8K128;
+				const bool k256 = mmaShape == MmaM16N8K256;
+				if ((!small && !k256 && mmaShape != MmaM16N8K128) ||
+					type != PTXOperand::s32 || b.type != a.type || c.type != type || d.type != type || modifier ||
+					(booleanOperator != BoolAnd && booleanOperator != BoolXor)) return "invalid binary mma shape/type/modifier";
+				const unsigned aCount = small ? 1u : k256 ? 4u : 2u;
+				const unsigned bCount = k256 ? 2u : 1u;
+				const unsigned cdCount = small ? 2u : 4u;
+				for (const PTXOperand* operand : {&a, &b, &c, &d}) {
+					const bool input = operand == &a || operand == &b;
+					const unsigned count = operand == &a ? aCount : operand == &b ? bCount : cdCount;
+					if (operand->array.size() != count || operand->vec != static_cast<PTXOperand::Vec>(count)) return "invalid binary mma fragment size";
+					for (const auto& element : operand->array)
+						if (input ? element.type != PTXOperand::b32 : !PTXOperand::relaxedValid(type, element.type)) return "invalid binary mma register type";
+				}
+				break;
 			}
 			if (a.type == PTXOperand::f64) {
 				if (mmaShape != MmaM8N8K4 || type != PTXOperand::f64 ||
@@ -3049,6 +3070,9 @@ std::string ir::PTXInstruction::toString() const {
 			switch (mmaShape) {
 			case MmaM8N8K32:  shapeName = "8n8k32";  break;
 			case MmaM16N8K64: shapeName = "16n8k64"; break;
+			case MmaM8N8K128: shapeName = "8n8k128"; break;
+			case MmaM16N8K128: shapeName = "16n8k128"; break;
+			case MmaM16N8K256: shapeName = "16n8k256"; break;
 			case MmaM8N8K4:   shapeName = "8n8k4";   break;
 			case MmaM16N8K4:  shapeName = "16n8k4";  break;
 			case MmaM16N8K8:  shapeName = "16n8k8";  break;
@@ -3066,6 +3090,7 @@ std::string ir::PTXInstruction::toString() const {
 				PTXOperand::toString(a.type) + "." +
 				PTXOperand::toString(b.type) + "." +
 				PTXOperand::toString(c.type) +
+				(a.type == PTXOperand::b1 ? "." + toString(booleanOperator) + ".popc" : "") +
 				(type == PTXOperand::f64 && modifier ? "." + toString((Modifier)modifier) : "") + " " +
 				d.toString() + ", " + a.toString() + ", " +
 				b.toString() + ", " + c.toString();

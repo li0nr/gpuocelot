@@ -178,6 +178,9 @@ namespace ir {
 			MmaM8N8K4,
 			MmaM8N8K32,
 			MmaM16N8K64,
+			MmaM8N8K128,
+			MmaM16N8K128,
+			MmaM16N8K256,
 			MmaShape_Invalid
 		};
 		

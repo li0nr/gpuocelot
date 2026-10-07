@@ -73,7 +73,7 @@ namespace ir {
 			pred,
 			f16x2,
 			bf16x2,
-			s4, u4 // MMA element types; stored in packed b32 registers.
+			s4, u4, b1 // MMA element types; stored in packed b32 registers.
 		};
 
 		/*!	Special register names */

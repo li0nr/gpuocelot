@@ -5207,7 +5207,115 @@ public:
 		return true;
 	}
 
+	bool test_MmaWarpParticipation() {
+		for (const char* form : {
+			"m8n8k128.row.col.s32.b1.b1.s32.xor.popc {%r0,%r1},{%r4},{%r5},{%r2,%r3}",
+			"m8n8k4.row.col.f64.f64.f64.f64 {%r0,%r1},{%r4},{%r5},{%r2,%r3}",
+			"m8n8k16.row.col.s32.s8.s8.s32 {%r0,%r1},{%r4},{%r5},{%r2,%r3}",
+			"m8n8k4.row.col.f16.f16.f16.f16 {%r0,%r1,%r2,%r3},{%r8,%r9},{%r10,%r11},{%r4,%r5,%r6,%r7}",
+			"m16n8k8.row.col.f32.f16.f16.f32 {%r0,%r1,%r2,%r3},{%r8,%r9},{%r10},{%r4,%r5,%r6,%r7}"}) {
+			const bool fp64 = std::string(form).find("f64") != std::string::npos;
+			std::stringstream source(std::string(".version 8.0\n.target sm_86\n.entry warp_mma() { .reg .pred %p; .reg .") +
+				(fp64 ? "b64" : "b32") + " %r<12>; @%p mma.sync.aligned." + form + "; ret; }");
+			Module parsed; parsed.load(source);
+			EmulatedKernel localKernel(parsed.getKernel("warp_mma"), nullptr);
+			for (int size : {33, 65, 1, 31}) {
+				localKernel.setKernelShape(size, 1, 1);
+				CooperativeThreadArray localCTA(&localKernel, Dim3(), false);
+				for (const auto& ins : localKernel.instructions) if (ins.opcode == PTXInstruction::Mma) {
+					const int completeThreads = (size / 32) * 32;
+					for (int scenario : {1, 0, 2, 3, 4}) {
+						if (scenario == 3 && completeThreads == 0) continue;
+						localCTA.reset();
+						auto& context = localCTA.getActiveContext();
+						for (int thread = 0; thread < size; ++thread) {
+							for (unsigned regID = 0; regID < localKernel.registerCount(); ++regID) localCTA.setRegAsB64(thread, regID, 0);
+							for (const auto& dest : ins.d.array) localCTA.setRegAsB64(thread, dest.reg, 0xdeadbeef);
+							const bool predicate = scenario == 2 || scenario == 4 ||
+								(scenario != 0 && thread < completeThreads && (scenario != 3 || thread != 0));
+							localCTA.setRegAsPredicate(thread, ins.pg.reg, predicate);
+							if (scenario == 4 && thread >= completeThreads) context.active.reset(thread);
+						}
+						bool rejected = false;
+						try { localCTA.eval_Mma(context, ins); } catch (const RuntimeException&) { rejected = true; }
+						if (rejected != (scenario == 2 || scenario == 3)) {
+							status << "mma participation mismatch: " << form << " CTA " << size << " scenario " << scenario << "\n";
+							return false;
+						}
+						if (!rejected) for (int thread = 0; thread < size; ++thread) for (const auto& dest : ins.d.array) {
+							const PTXU64 expected = scenario != 0 && thread < completeThreads ? 0 : 0xdeadbeef;
+							if (localCTA.getRegAsB64(thread, dest.reg) != expected) { status << "mma inactive lane changed or active result incorrect\n"; return false; }
+						}
+					}
+				}
+			}
+		}
+		return true;
+	}
+
 	bool test_MmaFloatShapes() {
+		for (const char* shape : {"m8n8k128", "m16n8k128", "m16n8k256"}) for (const char* op : {"xor", "and"}) {
+			const bool small = std::string(shape) == "m8n8k128", k256 = std::string(shape) == "m16n8k256";
+			const std::string d = small ? "{%r0,%r1}" : "{%r0,%r1,%r2,%r3}";
+			const std::string a = small ? "{%r4}" : k256 ? "{%r4,%r5,%r6,%r7}" : "{%r4,%r5}";
+			const std::string b = k256 ? "{%r8,%r9}" : "{%r8}";
+			const std::string c = small ? "{%r10,%r11}" : "{%r10,%r11,%r12,%r13}";
+			const std::string mnemonic = std::string("mma.sync.aligned.") + shape + ".row.col.s32.b1.b1.s32." + op + ".popc";
+			const std::string source = ".version 8.0\n.target sm_86\n.entry binary_mma() { .reg .b32 %r<14>; " + mnemonic + " " + d + ", " + a + ", " + b + ", " + c + "; ret; }";
+			std::stringstream input(source); Module parsed; parsed.load(input);
+			std::stringstream printed; parsed.write(printed); Module roundtrip; roundtrip.load(printed);
+			if (printed.str().find(mnemonic) == std::string::npos) return false;
+			for (const auto& statement : parsed.statements()) if (statement.instruction.opcode == PTXInstruction::Mma) {
+				const auto& ins = statement.instruction;
+				PTXInstruction invalid = ins; invalid.booleanOperator = PTXInstruction::BoolOr;
+				if (invalid.valid().empty()) return false;
+				if (ins.a.type != PTXOperand::b1 || ins.booleanOperator != (std::string(op) == "xor" ? PTXInstruction::BoolXor : PTXInstruction::BoolAnd)) return false;
+				PTXInstruction run = ins;
+				for (auto* fragment : {&run.a, &run.b, &run.c, &run.d})
+					for (auto& element : fragment->array) element.reg = std::stoi(element.identifier.substr(2));
+				run.c = run.d;
+				auto aBit = [](int row, int k) { return (row * 13 + k * 7 + (k / 32) * 3) % 11 < 5; };
+				auto bBit = [](int k, int col) { return (k * 5 + col * 3 + k / 64) % 13 < 6; };
+				for (PTXU32 base : {0x7fffffc0u, 0xffffffe0u}) {
+					cta->reset();
+					for (int lane = 0; lane < 32; ++lane) {
+						const int group = lane / 4, t = lane % 4;
+						for (unsigned i = 0; i < run.a.array.size(); ++i) {
+							PTXU32 packed = 0;
+							for (int bit = 0; bit < 32; ++bit) packed |= PTXU32(aBit(group + (i & 1) * 8, (t + (i / 2) * 4) * 32 + bit)) << bit;
+							cta->setRegAsB32(lane, run.a.array[i].reg, packed);
+						}
+						for (unsigned i = 0; i < run.b.array.size(); ++i) {
+							PTXU32 packed = 0;
+							for (int bit = 0; bit < 32; ++bit) packed |= PTXU32(bBit((t + i * 4) * 32 + bit, group)) << bit;
+							cta->setRegAsB32(lane, run.b.array[i].reg, packed);
+						}
+						for (unsigned i = 0; i < run.c.array.size(); ++i)
+							cta->setRegAsB32(lane, run.c.array[i].reg, base + (group + (i / 2) * 8) * 8 + 2 * t + (i & 1));
+					}
+					cta->eval_Mma(cta->getActiveContext(), run);
+					for (int lane = 0; lane < 32; ++lane) for (unsigned i = 0; i < run.d.array.size(); ++i) {
+						const int row = lane / 4 + (i / 2) * 8, col = (lane % 4) * 2 + (i & 1);
+						PTXU32 expected = base + row * 8 + col;
+						for (int k = 0; k < (k256 ? 256 : 128); ++k)
+							expected += run.booleanOperator == PTXInstruction::BoolXor ? aBit(row, k) != bBit(k, col) : aBit(row, k) && bBit(k, col);
+						if (cta->getRegAsB32(lane, run.d.array[i].reg) != expected) { status << "binary mma mismatch " << shape << " " << op << " lane " << lane << " register " << i << "\n"; return false; }
+					}
+				}
+			}
+			for (const auto& replacement : {std::make_pair(std::string(".popc"), std::string("")),
+				std::make_pair(std::string(".") + op + ".popc", std::string(".or.popc")),
+				std::make_pair(std::string("row.col"), std::string("col.col")),
+				std::make_pair(std::string("row.col"), std::string("row.col.satfinite")),
+				std::make_pair(std::string(shape), std::string("m8n8k16")),
+				std::make_pair(std::string(".reg .b32"), std::string(".reg .b1")),
+				std::make_pair(d, std::string("{%r0}"))}) {
+				std::string bad = source; bad.replace(bad.find(replacement.first), replacement.first.size(), replacement.second);
+				std::stringstream badInput(bad); bool rejected = false;
+				try { Module module; module.load(badInput); } catch (const std::exception&) { rejected = true; }
+				if (!rejected) { status << "invalid binary mma accepted: " << bad << "\n"; return false; }
+			}
+		}
 		// Every fragment must retain its exact register count and register mode.
 		for (const char* operation : {
 			"m8n8k4.row.col.f64.f64.f64.f64",
@@ -5215,7 +5323,8 @@ public:
 			"m16n8k16.row.col.f32.f16.f16.f32",
 			"m16n8k4.row.col.f32.tf32.tf32.f32",
 			"m8n8k16.row.col.s32.s8.u8.s32",
-			"m8n8k32.row.col.s32.s4.u4.s32"}) {
+			"m8n8k32.row.col.s32.s4.u4.s32",
+			"m8n8k128.row.col.s32.b1.b1.s32.xor.popc"}) {
 			const std::string op(operation);
 			const bool fp64 = op.find("f64") != std::string::npos;
 			const bool legacy = op.find("f16.f16.f16.f16") != std::string::npos;
@@ -5227,16 +5336,18 @@ public:
 			const std::string c = modern || legacy ? "{%r7,%r8,%r9,%r10}" : "{%r7,%r8}";
 			const std::string instruction = "mma.sync.aligned." + op + " " + d + ", " + a + ", " + b + ", " + c + ";";
 			const std::string prefix = ".version 8.0\n.target sm_86\n.global ." + std::string(fp64 ? "b64" : "b32") +
-				" ga;\n.entry fragments() { .reg ." + (fp64 ? "b64" : "b32") + " %r<14>; ";
+				" ga;\n.entry fragments() { .reg ." + (fp64 ? "b64" : "b32") + " %r<14>; " +
+				".reg .v2 ." + (fp64 ? "b64" : "b32") + " va; " +
+				".reg .v4 ." + (fp64 ? "b64" : "b32") + " vb; ";
 			std::stringstream validSource(prefix + instruction + " ret; }");
 			Module validModule; validModule.load(validSource);
 			for (const std::string& fragment : {d, a, b, c}) {
-				for (bool memory : {false, true}) {
+				for (int malformed = 0; malformed < 4; ++malformed) {
 					std::string bad = instruction;
 					const auto position = bad.find(fragment);
 					if (position == std::string::npos) continue;
-					if (memory) bad.replace(position + 1, 3, "ga");
-					else bad.insert(position + fragment.size() - 1, ",%r13");
+					if (malformed == 0) bad.insert(position + fragment.size() - 1, ",%r13");
+					else bad.replace(position + 1, 3, malformed == 1 ? "ga" : malformed == 2 ? "va" : "vb");
 					std::stringstream source(prefix + bad + " ret; }");
 					bool rejected = false;
 					try { Module module; module.load(source); }
@@ -5246,7 +5357,7 @@ public:
 			}
 		}
 		// PTX 8.0: m8n8k16/m16n8k32/m16n8k64 are integer-only shapes.
-		for (const char* shape : {"m16n8k4", "m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32", "m16n8k64"}) {
+		for (const char* shape : {"m16n8k4", "m16n8k8", "m16n8k16", "m8n8k16", "m16n8k32", "m16n8k64", "m8n8k128", "m16n8k128", "m16n8k256"}) {
 			for (const char* input : {"f16", "bf16", "tf32"}) {
 				for (const char* accumulator : {"f16", "f32"}) {
 					const bool small = std::string(shape) == "m16n8k8";
@@ -5370,6 +5481,13 @@ public:
 			PTXOperand* operands[] = {&invalid.a, &invalid.b, &invalid.c, &invalid.d};
 			operands[fragment]->addressMode = PTXOperand::Address;
 			if (!rejects(invalid)) return false;
+			for (int malformed = 0; malformed < 2; ++malformed) {
+				invalid = ins;
+				auto& element = operands[fragment]->array[0];
+				if (malformed == 0) element.vec = PTXOperand::v2;
+				else element.array.push_back(element);
+				if (!rejects(invalid)) return false;
+			}
 		}
 		for (auto shape : {PTXInstruction::MmaShape_Invalid,
 			PTXInstruction::MmaM8N8K16, PTXInstruction::MmaM16N8K32}) {
@@ -10123,6 +10241,7 @@ public:
 			result = (result && test_Fma());
 			result = (result && test_F16Fma());
 			result = (result && test_Bf16Fma());
+			result = (result && test_MmaWarpParticipation());
 			result = (result && test_MmaFloatShapes());
 			result = (result && test_Mma());
 			result = (result && test_MmaInt8());

@@ -377,6 +377,10 @@ LABEL ({IDENTIFIER}{WHITESPACE}":")
 ".u4" { yylval->value = TOKEN_U4; return TOKEN_U4; }
 ".m8n8k32" { yylval->value = TOKEN_M8N8K32; return TOKEN_M8N8K32; }
 ".m16n8k64" { yylval->value = TOKEN_M16N8K64; return TOKEN_M16N8K64; }
+".m8n8k128" { yylval->value = TOKEN_M8N8K128; return TOKEN_M8N8K128; }
+".m16n8k128" { yylval->value = TOKEN_M16N8K128; return TOKEN_M16N8K128; }
+".m16n8k256" { yylval->value = TOKEN_M16N8K256; return TOKEN_M16N8K256; }
+".b1" { yylval->value = TOKEN_B1; return TOKEN_B1; }
 ".s8"				            { yylval->value = TOKEN_S8; return TOKEN_S8; }
 ".s16"			            	{ yylval->value = TOKEN_S16; return TOKEN_S16; }
 ".s64"			            	{ yylval->value = TOKEN_S64; return TOKEN_S64; }

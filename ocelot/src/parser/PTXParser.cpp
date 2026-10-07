@@ -2032,6 +2032,12 @@ namespace parser
 		statement.instruction.opcode = ir::PTXInstruction::Mma;
 		statement.instruction.mmaShape = shapeToken == TOKEN_M8N8K32
 			? ir::PTXInstruction::MmaM8N8K32
+			: shapeToken == TOKEN_M8N8K128
+			? ir::PTXInstruction::MmaM8N8K128
+			: shapeToken == TOKEN_M16N8K128
+			? ir::PTXInstruction::MmaM16N8K128
+			: shapeToken == TOKEN_M16N8K256
+			? ir::PTXInstruction::MmaM16N8K256
 			: shapeToken == TOKEN_M16N8K64
 			? ir::PTXInstruction::MmaM16N8K64
 			: shapeToken == TOKEN_M16N8K8
@@ -2663,6 +2669,7 @@ namespace parser
 		switch( token )
 		{
 			case TOKEN_S4: return ir::PTXOperand::s4;
+			case TOKEN_B1: return ir::PTXOperand::b1;
 			case TOKEN_U4: return ir::PTXOperand::u4;
 			case TOKEN_U8:   return ir::PTXOperand::u8; break;
 			case TOKEN_U16:  return ir::PTXOperand::u16; break;
